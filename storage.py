@@ -200,37 +200,63 @@ class Storage:
             return True
         return False
 
-    def update_transaction(
-        self,
-        transaction_id: int,
-        **kwargs
-    ) -> bool:
+    def get_recent_transactions(self, tanggal: str, limit: int = 10) -> List[Tuple]:
         """
-        Update transaksi
-        kwargs bisa berisi: jumlah, keterangan, dll
+        Mengambil transaksi terbaru untuk tanggal tertentu
+        Returns: List of tuples dengan ID untuk keperluan edit
         """
-        if not kwargs:
-            return False
-
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        # Build dynamic UPDATE query
-        set_clause = ', '.join([f"{k} = ?" for k in kwargs.keys()])
-        values = list(kwargs.values())
-        values.append(transaction_id)
+        cursor.execute('''
+            SELECT id, tanggal, waktu, tipe, jumlah, sumber, keterangan,
+                   chat_id, user_id, message_id, file_id, created_at
+            FROM transactions
+            WHERE tanggal = ?
+            ORDER BY created_at DESC, waktu DESC
+            LIMIT ?
+        ''', (tanggal, limit))
 
-        cursor.execute(f'''
-            UPDATE transactions
-            SET {set_clause}
-            WHERE id = ?
-        ''', values)
-
-        affected = cursor.rowcount
-        conn.commit()
+        results = cursor.fetchall()
         conn.close()
 
-        if affected > 0:
-            logger.info(f"Transaction updated: ID={transaction_id}")
-            return True
-        return False
+        return results
+
+    def get_transaction_by_id(self, transaction_id: int) -> Optional[Tuple]:
+        """
+        Mengambil detail transaksi berdasarkan ID
+        Returns: tuple atau None
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT id, tanggal, waktu, tipe, jumlah, sumber, keterangan,
+                   chat_id, user_id, message_id, file_id, created_at
+            FROM transactions
+            WHERE id = ?
+        ''', (transaction_id,))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        return result
+
+    def get_transaction_count_by_type(self, tanggal: str, tipe: str) -> int:
+        """
+        Menghitung jumlah transaksi dengan tipe tertentu pada tanggal tertentu
+        Berguna untuk menampilkan "(3x)" di status
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT COUNT(*)
+            FROM transactions
+            WHERE tanggal = ? AND tipe = ?
+        ''', (tanggal, tipe))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        return result[0] if result else 0

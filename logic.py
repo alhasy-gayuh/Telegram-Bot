@@ -64,14 +64,17 @@ class FinancialLogic:
 
         # 3. Total pengeluaran (sum semua)
         total_pengeluaran = self.storage.get_sum_by_type(tanggal, 'keluar')
+        count_pengeluaran = self.storage.get_transaction_count_by_type(tanggal, 'keluar')
 
         # 4. Total TF (sum semua)
         total_tf = self.storage.get_sum_by_type(tanggal, 'tf')
+        count_tf = self.storage.get_transaction_count_by_type(tanggal, 'tf')
 
         # 5. POS total (input terakhir)
         pos_total = self.storage.get_latest_by_type(tanggal, 'pos')
         if pos_total is None:
             pos_total = 0.0
+        count_pos = self.storage.get_transaction_count_by_type(tanggal, 'pos')
 
         # 6. Hitung penjualan cash manual
         # RUMUS: S_cash = totalCash - modal + totalPengeluaran
@@ -118,8 +121,11 @@ class FinancialLogic:
             'modal': modal,
             'cash_akhir': cash_akhir,
             'total_tf': total_tf,
+            'count_tf': count_tf,
             'total_pengeluaran': total_pengeluaran,
+            'count_pengeluaran': count_pengeluaran,
             'pos_total': pos_total,
+            'count_pos': count_pos,
             'penjualan_cash': penjualan_cash,  # S_cash
             'omzet_manual': omzet_manual,
             'selisih': selisih,  # bisa negatif

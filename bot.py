@@ -39,18 +39,21 @@ class TokoBot:
         welcome_message = """
 🏪 *Bot Pencatatan Keuangan Toko*
 
-Perintah yang tersedia:
-• /modal <jumlah> - Catat modal awal hari ini
+📝 Perintah Input:
+• /modal <jumlah> - Catat modal awal
 • /cash <jumlah> - Catat cash akhir di laci
-• /tf <jumlah> - Catat transfer/QRIS masuk
-• /keluar <jumlah> [keterangan] - Catat pengeluaran
-• /totalpos <jumlah> - Input total omzet POS
-• /status - Lihat status keuangan hari ini
-• /lihat - Lihat transaksi hari ini
+• /tf <jumlah> - Catat transfer/QRIS
+• /keluar <jumlah> [ket] - Catat pengeluaran
+• /totalpos <jumlah> - Input omzet POS
 
-Format angka yang didukung:
-• 4000, 4k, 4K, 4rb, 4.000, 4,000, 4jt, dll
-• Penjumlahan: 2k + 3k + 5k atau 2k, 3k, 5k
+📊 Perintah Lihat Data:
+• /status - Status keuangan hari ini
+• /lihat - Daftar transaksi hari ini
+• /edit - Edit transaksi yang salah
+
+💡 Format angka:
+• 4000, 4k, 4rb, 4.000, 4jt
+• Penjumlahan: 2k + 3k + 5k
         """
         await update.message.reply_text(welcome_message, parse_mode='Markdown')
 
@@ -58,17 +61,21 @@ Format angka yang didukung:
         """Handler untuk /modal <amount>"""
         try:
             if not context.args:
-                await update.message.reply_text("❌ Format: /modal <jumlah>\nContoh: /modal 500000")
+                await update.message.reply_text("❌ Format: /modal <jumlah>\nContoh: /modal 500k")
                 return
 
             amount_str = ' '.join(context.args)
-            amount = parse_amount(amount_str)
 
-            if amount <= 0:
-                await update.message.reply_text("❌ Jumlah harus lebih dari 0")
+            try:
+                amount = parse_amount(amount_str)
+            except ValueError as e:
+                await update.message.reply_text(f"❌ Format tidak valid: {str(e)}\n\n✅ Data TIDAK tersimpan.")
                 return
 
-            # Simpan transaksi
+            if amount <= 0:
+                await update.message.reply_text("❌ Jumlah harus > 0\n\n✅ Data TIDAK tersimpan.")
+                return
+
             tanggal = datetime.now().strftime('%Y-%m-%d')
             waktu = datetime.now().strftime('%H:%M:%S')
 
@@ -84,29 +91,30 @@ Format angka yang didukung:
                 message_id=update.message.message_id
             )
 
-            await update.message.reply_text(
-                f"✅ Modal awal {format_rupiah(amount)} untuk tanggal {tanggal} tersimpan."
-            )
+            await update.message.reply_text(f"✅ Modal awal {format_rupiah(amount)} tersimpan")
             logger.info(f"Modal saved: {amount} by user {update.effective_user.id}")
 
-        except ValueError as e:
-            await update.message.reply_text(f"❌ Format angka tidak valid: {str(e)}")
         except Exception as e:
             logger.error(f"Error in modal_command: {e}")
-            await update.message.reply_text("❌ Terjadi kesalahan saat menyimpan modal")
+            await update.message.reply_text("❌ Terjadi kesalahan")
 
     async def cash_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler untuk /cash <amount>"""
         try:
             if not context.args:
-                await update.message.reply_text("❌ Format: /cash <jumlah>\nContoh: /cash 1200000")
+                await update.message.reply_text("❌ Format: /cash <jumlah>\nContoh: /cash 1.2jt")
                 return
 
             amount_str = ' '.join(context.args)
-            amount = parse_amount(amount_str)
+
+            try:
+                amount = parse_amount(amount_str)
+            except ValueError as e:
+                await update.message.reply_text(f"❌ Format tidak valid: {str(e)}\n\n✅ Data TIDAK tersimpan.")
+                return
 
             if amount < 0:
-                await update.message.reply_text("❌ Jumlah tidak boleh negatif")
+                await update.message.reply_text("❌ Jumlah tidak boleh negatif\n\n✅ Data TIDAK tersimpan.")
                 return
 
             tanggal = datetime.now().strftime('%Y-%m-%d')
@@ -124,29 +132,30 @@ Format angka yang didukung:
                 message_id=update.message.message_id
             )
 
-            await update.message.reply_text(
-                f"✅ Cash akhir {format_rupiah(amount)} tersimpan untuk hari ini."
-            )
-            logger.info(f"Cash saved: {amount} by user {update.effective_user.id}")
+            await update.message.reply_text(f"✅ Cash akhir {format_rupiah(amount)} tersimpan")
+            logger.info(f"Cash saved: {amount}")
 
-        except ValueError as e:
-            await update.message.reply_text(f"❌ Format angka tidak valid: {str(e)}")
         except Exception as e:
             logger.error(f"Error in cash_command: {e}")
-            await update.message.reply_text("❌ Terjadi kesalahan saat menyimpan cash")
+            await update.message.reply_text("❌ Terjadi kesalahan")
 
     async def tf_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler untuk /tf <amount>"""
         try:
             if not context.args:
-                await update.message.reply_text("❌ Format: /tf <jumlah>\nContoh: /tf 800000")
+                await update.message.reply_text("❌ Format: /tf <jumlah>\nContoh: /tf 800k")
                 return
 
             amount_str = ' '.join(context.args)
-            amount = parse_amount(amount_str)
+
+            try:
+                amount = parse_amount(amount_str)
+            except ValueError as e:
+                await update.message.reply_text(f"❌ Format tidak valid: {str(e)}\n\n✅ Data TIDAK tersimpan.")
+                return
 
             if amount <= 0:
-                await update.message.reply_text("❌ Jumlah harus lebih dari 0")
+                await update.message.reply_text("❌ Jumlah harus > 0\n\n✅ Data TIDAK tersimpan.")
                 return
 
             tanggal = datetime.now().strftime('%Y-%m-%d')
@@ -164,62 +173,53 @@ Format angka yang didukung:
                 message_id=update.message.message_id
             )
 
-            await update.message.reply_text(
-                f"✅ Transfer/QRIS {format_rupiah(amount)} tercatat."
-            )
-            logger.info(f"TF saved: {amount} by user {update.effective_user.id}")
+            await update.message.reply_text(f"✅ Transfer/QRIS {format_rupiah(amount)} tercatat")
+            logger.info(f"TF saved: {amount}")
 
-        except ValueError as e:
-            await update.message.reply_text(f"❌ Format angka tidak valid: {str(e)}")
         except Exception as e:
             logger.error(f"Error in tf_command: {e}")
-            await update.message.reply_text("❌ Terjadi kesalahan saat menyimpan transfer")
+            await update.message.reply_text("❌ Terjadi kesalahan")
 
     async def keluar_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler untuk /keluar <amount> [keterangan]"""
         try:
             if not context.args:
-                await update.message.reply_text("❌ Format: /keluar <jumlah> [keterangan]\nContoh: /keluar 200000 beli gas")
+                await update.message.reply_text("❌ Format: /keluar <jumlah> [ket]\nContoh: /keluar 200k beli gas")
                 return
 
-            # Gabungkan semua args
             full_text = ' '.join(context.args)
-
-            # Strategi parsing: cari semua token di awal yang bisa diparsing sebagai angka atau operator
             tokens = full_text.split()
             amount_tokens = []
             keterangan_tokens = []
             found_text = False
 
             for token in tokens:
-                # Cek apakah token ini angka, +, atau format angka (4k, 5rb, dll)
                 if not found_text:
-                    # Coba parse sebagai angka atau operator
                     if token == '+':
                         amount_tokens.append('+')
                     elif self._is_amount_token(token):
                         amount_tokens.append(token)
                     else:
-                        # Token pertama yang bukan angka = mulai keterangan
                         found_text = True
                         keterangan_tokens.append(token)
                 else:
                     keterangan_tokens.append(token)
 
-            # Build amount string
             amount_str = ' '.join(amount_tokens) if amount_tokens else ''
             keterangan = ' '.join(keterangan_tokens) if keterangan_tokens else ''
 
-            # Jika tidak ada amount_str, berarti format salah
             if not amount_str:
-                await update.message.reply_text("❌ Format: /keluar <jumlah> [keterangan]\nContoh: /keluar 200000 beli gas\nAtau: /keluar 2000 + 7000 + 8rb")
+                await update.message.reply_text("❌ Format: /keluar <jumlah> [ket]\nContoh: /keluar 2k + 4k operasional")
                 return
 
-            # Parse amount (sudah support penjumlahan)
-            amount = parse_amount(amount_str)
+            try:
+                amount = parse_amount(amount_str)
+            except ValueError as e:
+                await update.message.reply_text(f"❌ Format tidak valid: {str(e)}\n\n✅ Data TIDAK tersimpan.")
+                return
 
             if amount <= 0:
-                await update.message.reply_text("❌ Jumlah harus lebih dari 0")
+                await update.message.reply_text("❌ Jumlah harus > 0\n\n✅ Data TIDAK tersimpan.")
                 return
 
             tanggal = datetime.now().strftime('%Y-%m-%d')
@@ -237,22 +237,19 @@ Format angka yang didukung:
                 message_id=update.message.message_id
             )
 
-            msg = f"✅ Pengeluaran {format_rupiah(amount)} tercatat."
+            msg = f"✅ Pengeluaran {format_rupiah(amount)} tercatat"
             if keterangan:
-                msg += f"\n📝 Keterangan: {keterangan}"
+                msg += f"\n📝 {keterangan}"
 
             await update.message.reply_text(msg)
-            logger.info(f"Pengeluaran saved: {amount} ({keterangan}) by user {update.effective_user.id}")
+            logger.info(f"Pengeluaran saved: {amount}")
 
-        except ValueError as e:
-            await update.message.reply_text(f"❌ {str(e)}\n\nContoh format:\n• /keluar 200000 beli gas\n• /keluar 2000 + 7000 + 8rb\n• /keluar 2k + 4k operasional")
         except Exception as e:
             logger.error(f"Error in keluar_command: {e}")
-            await update.message.reply_text("❌ Terjadi kesalahan saat menyimpan pengeluaran")
+            await update.message.reply_text("❌ Terjadi kesalahan")
 
     def _is_amount_token(self, token: str) -> bool:
-        """Helper untuk cek apakah token adalah angka atau format angka"""
-        # Pattern untuk angka dengan optional suffix (k, rb, jt, dll) dan separator (. atau ,)
+        """Helper untuk cek apakah token adalah angka"""
         pattern = r'^[\d\.,]+[kmjtrbibulanosnd]*$'
         return bool(re.match(pattern, token.lower()))
 
@@ -260,14 +257,19 @@ Format angka yang didukung:
         """Handler untuk /totalpos <amount>"""
         try:
             if not context.args:
-                await update.message.reply_text("❌ Format: /totalpos <jumlah>\nContoh: /totalpos 2100000")
+                await update.message.reply_text("❌ Format: /totalpos <jumlah>\nContoh: /totalpos 2.1jt")
                 return
 
             amount_str = ' '.join(context.args)
-            amount = parse_amount(amount_str)
+
+            try:
+                amount = parse_amount(amount_str)
+            except ValueError as e:
+                await update.message.reply_text(f"❌ Format tidak valid: {str(e)}\n\n✅ Data TIDAK tersimpan.")
+                return
 
             if amount < 0:
-                await update.message.reply_text("❌ Jumlah tidak boleh negatif")
+                await update.message.reply_text("❌ Jumlah tidak boleh negatif\n\n✅ Data TIDAK tersimpan.")
                 return
 
             tanggal = datetime.now().strftime('%Y-%m-%d')
@@ -285,59 +287,75 @@ Format angka yang didukung:
                 message_id=update.message.message_id
             )
 
-            await update.message.reply_text(
-                f"✅ Total POS hari ini {format_rupiah(amount)} tersimpan (menggantikan jika sebelumnya sudah ada)."
-            )
-            logger.info(f"POS total saved: {amount} by user {update.effective_user.id}")
+            await update.message.reply_text(f"✅ Total POS {format_rupiah(amount)} tersimpan")
+            logger.info(f"POS saved: {amount}")
 
-        except ValueError as e:
-            await update.message.reply_text(f"❌ Format angka tidak valid: {str(e)}")
         except Exception as e:
             logger.error(f"Error in totalpos_command: {e}")
-            await update.message.reply_text("❌ Terjadi kesalahan saat menyimpan total POS")
+            await update.message.reply_text("❌ Terjadi kesalahan")
 
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handler untuk /status - menampilkan rekap keuangan hari ini"""
+        """Handler untuk /status - rekap keuangan hari ini"""
         try:
             tanggal = datetime.now().strftime('%Y-%m-%d')
             tanggal_display = datetime.now().strftime('%A, %d %B %Y')
 
-            # Gunakan locale Indonesia jika tersedia (fallback ke default)
             try:
                 import locale
                 locale.setlocale(locale.LC_TIME, 'id_ID.UTF-8')
                 tanggal_display = datetime.now().strftime('%A, %d %B %Y')
             except:
-                pass  # Gunakan format default jika locale tidak tersedia
+                pass
 
             summary = self.logic.calculate_daily_summary(tanggal)
 
-            # Format output sesuai spesifikasi
-            message = f"""📊 *STATUS HARI INI*
+            # Format output yang lebih rapi dan eye-catching
+            message = f"""
+╔══════════════════════════╗
+║  📊 STATUS HARI INI  ║
+╚══════════════════════════╝
 📅 {tanggal_display}
 
-💰 Modal Awal: {format_rupiah(summary['modal'])}
-💵 Cash Akhir (di laci): {format_rupiah(summary['cash_akhir'])}
-💳 Total TF/QRIS: {format_rupiah(summary['total_tf'])}
-📤 Total Pengeluaran: {format_rupiah(summary['total_pengeluaran'])}
+━━━━━━━━━━━━━━━━━━━━━━━━
+💰 MODAL & CASH
+━━━━━━━━━━━━━━━━━━━━━━━━
+Modal Awal       : {format_rupiah(summary['modal'])}
+Cash Akhir (laci): {format_rupiah(summary['cash_akhir'])}
 
-📈 Penjualan Cash Manual (C - M + E): {format_rupiah(summary['penjualan_cash'])}
-📈 Omzet Manual (C - M + E + T): {format_rupiah(summary['omzet_manual'])}
+━━━━━━━━━━━━━━━━━━━━━━━━
+💳 TRANSAKSI
+━━━━━━━━━━━━━━━━━━━━━━━━
+Total TF/QRIS    : {format_rupiah(summary['total_tf'])} ({summary['count_tf']}x)
+Total Pengeluaran: {format_rupiah(summary['total_pengeluaran'])} ({summary['count_pengeluaran']}x)
 
-🖥️ Omzet POS: {format_rupiah(summary['pos_total'])}
-📊 Selisih (Manual - POS): {format_rupiah(summary['selisih'])} ({summary['selisih_persen']:.2f}%)
+━━━━━━━━━━━━━━━━━━━━━━━━
+📈 PERHITUNGAN
+━━━━━━━━━━━━━━━━━━━━━━━━
+Penjualan Cash   : {format_rupiah(summary['penjualan_cash'])}
+Omzet Manual     : {format_rupiah(summary['omzet_manual'])}
 
-{summary['status_icon']} {summary['status_text']}"""
+━━━━━━━━━━━━━━━━━━━━━━━━
+🖥️ OMZET POS
+━━━━━━━━━━━━━━━━━━━━━━━━
+Omzet POS        : {format_rupiah(summary['pos_total'])} ({summary['count_pos']}x)
 
-            await update.message.reply_text(message, parse_mode='Markdown')
-            logger.info(f"Status requested by user {update.effective_user.id}")
+━━━━━━━━━━━━━━━━━━━━━━━━
+📊 SELISIH
+━━━━━━━━━━━━━━━━━━━━━━━━
+Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen']:.2f}%)
+
+{summary['status_icon']} {summary['status_text']}
+"""
+
+            await update.message.reply_text(message)
+            logger.info(f"Status requested")
 
         except Exception as e:
             logger.error(f"Error in status_command: {e}")
-            await update.message.reply_text("❌ Terjadi kesalahan saat menghitung status")
+            await update.message.reply_text("❌ Terjadi kesalahan")
 
     async def lihat_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handler untuk /lihat - menampilkan list transaksi hari ini"""
+        """Handler untuk /lihat - list transaksi hari ini"""
         try:
             tanggal = datetime.now().strftime('%Y-%m-%d')
             tanggal_display = datetime.now().strftime('%A, %d %B %Y')
@@ -352,112 +370,217 @@ Format angka yang didukung:
             transactions = self.storage.get_transactions_by_date(tanggal)
             summary = self.logic.calculate_daily_summary(tanggal)
 
-            message = f"📒 *DATA TRANSAKSI HARI INI*\n📅 {tanggal_display}\n\n"
+            message = f"""
+╔══════════════════════════╗
+║  📒 TRANSAKSI HARI INI  ║
+╚══════════════════════════╝
+📅 {tanggal_display}
+
+"""
 
             if not transactions:
-                message += "_Belum ada transaksi hari ini_\n\n"
+                message += "📭 _Belum ada transaksi hari ini_\n"
             else:
                 tipe_emoji = {
-                    'modal': '💰 MODAL',
-                    'cash': '💵 CASH',
-                    'tf': '💳 TF',
-                    'keluar': '📤 KELUAR',
-                    'pos': '🖥️ POS'
+                    'modal': '💰',
+                    'cash': '💵',
+                    'tf': '💳',
+                    'keluar': '📤',
+                    'pos': '🖥️'
+                }
+
+                tipe_label = {
+                    'modal': 'MODAL',
+                    'cash': 'CASH',
+                    'tf': 'TF',
+                    'keluar': 'KELUAR',
+                    'pos': 'POS'
                 }
 
                 for i, tx in enumerate(transactions, 1):
-                    waktu = tx[2]  # waktu dari tuple result
+                    tx_id = tx[0]
+                    waktu = tx[2][:5]  # HH:MM saja
                     tipe = tx[3]
                     jumlah = tx[4]
                     keterangan = tx[6] if tx[6] else ''
 
-                    tipe_label = tipe_emoji.get(tipe, tipe.upper())
-                    line = f"{i}) [{waktu}] {tipe_label} {format_rupiah(jumlah)}"
+                    emoji = tipe_emoji.get(tipe, '📝')
+                    label = tipe_label.get(tipe, tipe.upper())
+
+                    line = f"{i}. [{waktu}] {emoji} {label}: {format_rupiah(jumlah)}"
                     if keterangan:
-                        line += f" - {keterangan}"
-                    message += line + "\n"
+                        line += f"\n   💬 {keterangan}"
+                    line += f"\n   🔑 ID: {tx_id}\n"
 
-            # Tambahkan summary
+                    message += line
+
+            # Summary
             message += f"""
-💰 Modal Awal: {format_rupiah(summary['modal'])}
-💵 Cash Akhir: {format_rupiah(summary['cash_akhir'])}
-💳 Total TF/QRIS: {format_rupiah(summary['total_tf'])}
-📤 Total Pengeluaran: {format_rupiah(summary['total_pengeluaran'])}
-📈 Omzet Manual: {format_rupiah(summary['omzet_manual'])}
-🖥️ Omzet POS: {format_rupiah(summary['pos_total'])}
-📊 Selisih: {format_rupiah(summary['selisih'])} ({summary['selisih_persen']:.2f}%)"""
+━━━━━━━━━━━━━━━━━━━━━━━━
+📊 RINGKASAN
+━━━━━━━━━━━━━━━━━━━━━━━━
+💰 Modal         : {format_rupiah(summary['modal'])}
+💵 Cash Akhir    : {format_rupiah(summary['cash_akhir'])}
+💳 TF/QRIS       : {format_rupiah(summary['total_tf'])} ({summary['count_tf']}x)
+📤 Pengeluaran   : {format_rupiah(summary['total_pengeluaran'])} ({summary['count_pengeluaran']}x)
+📈 Omzet Manual  : {format_rupiah(summary['omzet_manual'])}
+🖥️ Omzet POS     : {format_rupiah(summary['pos_total'])}
+📊 Selisih       : {format_rupiah(summary['selisih'])} ({summary['selisih_persen']:.2f}%)
 
-            await update.message.reply_text(message, parse_mode='Markdown')
-            logger.info(f"Lihat requested by user {update.effective_user.id}")
+💡 Gunakan /edit <ID> untuk edit transaksi
+"""
+
+            await update.message.reply_text(message)
+            logger.info(f"Lihat requested")
 
         except Exception as e:
             logger.error(f"Error in lihat_command: {e}")
-            await update.message.reply_text("❌ Terjadi kesalahan saat mengambil data transaksi")
+            await update.message.reply_text("❌ Terjadi kesalahan")
+
+    async def edit_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler untuk /edit [ID]"""
+        try:
+            # Jika tidak ada argumen, tampilkan transaksi hari ini untuk dipilih
+            if not context.args:
+                tanggal = datetime.now().strftime('%Y-%m-%d')
+                transactions = self.storage.get_recent_transactions(tanggal, limit=20)
+
+                if not transactions:
+                    await update.message.reply_text("📭 Belum ada transaksi hari ini")
+                    return
+
+                message = "🔧 *EDIT TRANSAKSI*\n\n"
+                message += "Pilih transaksi yang ingin diedit:\n\n"
+
+                tipe_emoji = {'modal': '💰', 'cash': '💵', 'tf': '💳', 'keluar': '📤', 'pos': '🖥️'}
+
+                for tx in transactions[:10]:  # Tampilkan 10 terbaru
+                    tx_id = tx[0]
+                    waktu = tx[2][:5]
+                    tipe = tx[3]
+                    jumlah = tx[4]
+                    ket = tx[6] if tx[6] else ''
+
+                    emoji = tipe_emoji.get(tipe, '📝')
+                    line = f"🔑 ID: `{tx_id}` - [{waktu}] {emoji} {format_rupiah(jumlah)}"
+                    if ket:
+                        line += f"\n   💬 {ket}"
+                    message += line + "\n\n"
+
+                message += "\n📝 Cara edit:\n"
+                message += "1️⃣ Hapus: `/edit <ID> hapus`\n"
+                message += "2️⃣ Ubah jumlah: `/edit <ID> <jumlah_baru>`\n"
+                message += "3️⃣ Ubah ket: `/edit <ID> ket <keterangan_baru>`\n\n"
+                message += "Contoh:\n"
+                message += "• `/edit 123 hapus`\n"
+                message += "• `/edit 123 150k`\n"
+                message += "• `/edit 123 ket beli gas`"
+
+                await update.message.reply_text(message, parse_mode='Markdown')
+                return
+
+            # Parse argumen
+            tx_id = int(context.args[0])
+
+            # Cek transaksi ada
+            tx = self.storage.get_transaction_by_id(tx_id)
+            if not tx:
+                await update.message.reply_text(f"❌ Transaksi ID {tx_id} tidak ditemukan")
+                return
+
+            # Jika hanya ID, tampilkan detail
+            if len(context.args) == 1:
+                tipe_emoji = {'modal': '💰', 'cash': '💵', 'tf': '💳', 'keluar': '📤', 'pos': '🖥️'}
+                emoji = tipe_emoji.get(tx[3], '📝')
+
+                message = f"📝 *DETAIL TRANSAKSI*\n\n"
+                message += f"🔑 ID: `{tx[0]}`\n"
+                message += f"📅 Tanggal: {tx[1]}\n"
+                message += f"🕐 Waktu: {tx[2]}\n"
+                message += f"{emoji} Tipe: {tx[3].upper()}\n"
+                message += f"💵 Jumlah: {format_rupiah(tx[4])}\n"
+                if tx[6]:
+                    message += f"💬 Keterangan: {tx[6]}\n"
+
+                message += "\n📝 Cara edit:\n"
+                message += f"• Hapus: `/edit {tx_id} hapus`\n"
+                message += f"• Ubah jumlah: `/edit {tx_id} <jumlah>`\n"
+                message += f"• Ubah ket: `/edit {tx_id} ket <text>`"
+
+                await update.message.reply_text(message, parse_mode='Markdown')
+                return
+
+            # Action: hapus
+            if context.args[1].lower() == 'hapus':
+                self.storage.delete_transaction(tx_id)
+                await update.message.reply_text(f"✅ Transaksi ID {tx_id} berhasil dihapus")
+                logger.info(f"Transaction deleted: ID={tx_id}")
+                return
+
+            # Action: ubah keterangan
+            if context.args[1].lower() == 'ket':
+                new_ket = ' '.join(context.args[2:])
+                self.storage.update_transaction(tx_id, keterangan=new_ket)
+                await update.message.reply_text(f"✅ Keterangan transaksi ID {tx_id} diubah menjadi:\n💬 {new_ket}")
+                logger.info(f"Transaction updated: ID={tx_id}, new_ket={new_ket}")
+                return
+
+            # Action: ubah jumlah
+            amount_str = ' '.join(context.args[1:])
+            try:
+                new_amount = parse_amount(amount_str)
+            except ValueError as e:
+                await update.message.reply_text(f"❌ Format tidak valid: {str(e)}")
+                return
+
+            if new_amount < 0:
+                await update.message.reply_text("❌ Jumlah tidak boleh negatif")
+                return
+
+            self.storage.update_transaction(tx_id, jumlah=new_amount)
+            await update.message.reply_text(f"✅ Jumlah transaksi ID {tx_id} diubah menjadi:\n💵 {format_rupiah(new_amount)}")
+            logger.info(f"Transaction updated: ID={tx_id}, new_amount={new_amount}")
+
+        except ValueError:
+            await update.message.reply_text("❌ ID harus berupa angka\nContoh: /edit 123")
+        except Exception as e:
+            logger.error(f"Error in edit_command: {e}")
+            await update.message.reply_text("❌ Terjadi kesalahan")
 
     async def photo_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """
-        Handler untuk foto yang dikirim dengan caption 'tf' atau 'transfer'
-        TODO: Integrate dengan n8n OCR service
-        """
+        """Handler untuk foto (OCR - TODO)"""
         try:
             caption = update.message.caption if update.message.caption else ''
             caption_lower = caption.lower().strip()
 
-            # Cek apakah caption mengandung kata kunci tf/transfer
             if 'tf' not in caption_lower and 'transfer' not in caption_lower:
-                return  # Abaikan foto tanpa keyword
+                return
 
-            # Ambil file_id foto terbesar (kualitas tertinggi)
             photo = update.message.photo[-1]
             file_id = photo.file_id
 
-            # TODO: Implementasi OCR call ke n8n
-            # Untuk sekarang, kirim notifikasi bahwa fitur OCR belum aktif
             await update.message.reply_text(
-                "📷 Foto bukti transfer diterima.\n"
-                "⚠️ Fitur OCR otomatis belum aktif. Silakan gunakan /tf <jumlah> untuk mencatat manual."
+                "📷 Foto diterima\n⚠️ Fitur OCR belum aktif\nGunakan /tf <jumlah>"
             )
 
-            logger.info(f"Photo received with caption '{caption}' from user {update.effective_user.id}")
-
-            # STUB: Fungsi untuk mengirim ke n8n (belum diimplementasi)
-            # await self.send_to_ocr_service(file_id, caption, update.effective_chat.id, update.message.message_id)
+            logger.info(f"Photo received: {file_id}")
 
         except Exception as e:
             logger.error(f"Error in photo_handler: {e}")
 
-    async def send_to_ocr_service(self, file_id: str, caption: str, chat_id: int, message_id: int):
-        """
-        STUB: Fungsi untuk mengirim foto ke n8n OCR service
-        TODO: Implementasi HTTP POST ke N8N_OCR_URL
-        """
-        # Implementasi akan seperti ini:
-        # 1. Download file dari Telegram menggunakan file_id
-        # 2. Kirim POST request ke self.config.N8N_OCR_URL dengan payload:
-        #    {
-        #      "chat_id": chat_id,
-        #      "message_id": message_id,
-        #      "file_id": file_id,
-        #      "note": caption
-        #    }
-        # 3. N8n akan memproses dan callback ke /ocr-transfer-result
-        pass
-
     async def callback_query_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handler untuk inline button callback (untuk konfirmasi OCR)"""
+        """Handler untuk inline button callback"""
         query = update.callback_query
         await query.answer()
 
         data = query.data
 
         if data.startswith('ocr_save_'):
-            # Format: ocr_save_AMOUNT_MESSAGEID
             parts = data.split('_')
             if len(parts) >= 4:
                 amount = int(parts[2])
                 original_msg_id = int(parts[3])
 
-                # Simpan transaksi
                 tanggal = datetime.now().strftime('%Y-%m-%d')
                 waktu = datetime.now().strftime('%H:%M:%S')
 
@@ -473,18 +596,15 @@ Format angka yang didukung:
                     message_id=original_msg_id
                 )
 
-                await query.edit_message_text(
-                    f"✅ Transfer {format_rupiah(amount)} dari OCR telah disimpan."
-                )
+                await query.edit_message_text(f"✅ Transfer {format_rupiah(amount)} dari OCR tersimpan")
                 logger.info(f"OCR transaction saved: {amount}")
 
         elif data.startswith('ocr_cancel_'):
-            await query.edit_message_text("❌ Transaksi OCR dibatalkan.")
-            logger.info("OCR transaction cancelled")
+            await query.edit_message_text("❌ Transaksi OCR dibatalkan")
+            logger.info("OCR cancelled")
 
     def run(self):
         """Jalankan bot"""
-        # Buat application
         application = Application.builder().token(self.config.TELEGRAM_BOT_TOKEN).build()
 
         # Register handlers
@@ -496,14 +616,11 @@ Format angka yang didukung:
         application.add_handler(CommandHandler("totalpos", self.totalpos_command))
         application.add_handler(CommandHandler("status", self.status_command))
         application.add_handler(CommandHandler("lihat", self.lihat_command))
+        application.add_handler(CommandHandler("edit", self.edit_command))
 
-        # Handler untuk foto
         application.add_handler(MessageHandler(filters.PHOTO, self.photo_handler))
-
-        # Handler untuk callback query (inline buttons)
         application.add_handler(CallbackQueryHandler(self.callback_query_handler))
 
-        # Start bot
         logger.info("Bot started...")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
