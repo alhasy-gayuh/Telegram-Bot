@@ -260,3 +260,42 @@ class Storage:
         conn.close()
 
         return result[0] if result else 0
+
+    def delete_all_transactions_by_date(self, tanggal: str) -> int:
+        """
+        Menghapus SEMUA transaksi pada tanggal tertentu
+        Digunakan untuk fitur /reset
+        Returns: jumlah transaksi yang dihapus
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM transactions WHERE tanggal = ?', (tanggal,))
+        affected = cursor.rowcount
+
+        conn.commit()
+        conn.close()
+
+        if affected > 0:
+            logger.info(f"All transactions deleted for date: {tanggal}, count: {affected}")
+
+        return affected
+
+    def check_modal_exists_today(self, tanggal: str) -> bool:
+        """
+        Cek apakah sudah ada modal untuk hari ini
+        Digunakan untuk warning jika user input modal 2x dalam sehari
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT COUNT(*)
+            FROM transactions
+            WHERE tanggal = ? AND tipe = 'modal'
+        ''', (tanggal,))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        return result[0] > 0 if result else False

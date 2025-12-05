@@ -50,10 +50,16 @@ class TokoBot:
 • /status - Status keuangan hari ini
 • /lihat - Daftar transaksi hari ini
 • /edit - Edit transaksi yang salah
+• /reset - Reset semua transaksi hari ini
 
 💡 Format angka:
 • 4000, 4k, 4rb, 4.000, 4jt
 • Penjumlahan: 2k + 3k + 5k
+
+⚠️ Tips:
+• Input /modal menandai awal hari baru
+• Semua perhitungan berdasarkan tanggal
+• Gunakan /reset jika ada kesalahan besar
         """
         await update.message.reply_text(welcome_message, parse_mode='Markdown')
 
@@ -79,6 +85,31 @@ class TokoBot:
             tanggal = datetime.now().strftime('%Y-%m-%d')
             waktu = datetime.now().strftime('%H:%M:%S')
 
+            # Cek apakah sudah ada modal hari ini
+            modal_exists = self.storage.check_modal_exists_today(tanggal)
+
+            if modal_exists:
+                # Kirim warning dengan pilihan
+                keyboard = [
+                    [
+                        InlineKeyboardButton("✅ Ya, Reset Hari Ini", callback_data=f"reset_and_modal_{amount}"),
+                        InlineKeyboardButton("❌ Batal", callback_data="cancel_modal")
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                await update.message.reply_text(
+                    f"⚠️ *PERINGATAN*\n\n"
+                    f"Anda sudah input modal hari ini.\n"
+                    f"Input modal baru berarti *RESET SEMUA* transaksi hari ini.\n\n"
+                    f"💰 Modal baru: {format_rupiah(amount)}\n\n"
+                    f"Lanjutkan?",
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+                return
+
+            # Simpan transaksi modal
             self.storage.add_transaction(
                 tanggal=tanggal,
                 waktu=waktu,
@@ -91,7 +122,10 @@ class TokoBot:
                 message_id=update.message.message_id
             )
 
-            await update.message.reply_text(f"✅ Modal awal {format_rupiah(amount)} tersimpan")
+            await update.message.reply_text(
+                f"✅ Modal awal {format_rupiah(amount)} tersimpan\n"
+                f"📅 Transaksi hari ini dimulai"
+            )
             logger.info(f"Modal saved: {amount} by user {update.effective_user.id}")
 
         except Exception as e:
@@ -518,7 +552,10 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
                 return
 
             # Action: ubah keterangan
-            if context.args[1].lower() == 'ket':
+            if context.args[1].lower() == 'ket' or context.args[1].lower() == 'keterangan':
+                if len(context.args) < 3:
+                    await update.message.reply_text("❌ Format: /edit <ID> ket <keterangan_baru>")
+                    return
                 new_ket = ' '.join(context.args[2:])
                 self.storage.update_transaction(tx_id, keterangan=new_ket)
                 await update.message.reply_text(f"✅ Keterangan transaksi ID {tx_id} diubah menjadi:\n💬 {new_ket}")
@@ -568,6 +605,42 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
         except Exception as e:
             logger.error(f"Error in photo_handler: {e}")
 
+    async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler untuk /reset - reset transaksi hari ini"""
+        try:
+            tanggal = datetime.now().strftime('%Y-%m-%d')
+
+            # Cek apakah ada transaksi hari ini
+            transactions = self.storage.get_transactions_by_date(tanggal)
+
+            if not transactions:
+                await update.message.reply_text("📭 Belum ada transaksi hari ini untuk direset")
+                return
+
+            # Tampilkan konfirmasi
+            count = len(transactions)
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Ya, Reset", callback_data=f"confirm_reset_{tanggal}"),
+                    InlineKeyboardButton("❌ Batal", callback_data="cancel_reset")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await update.message.reply_text(
+                f"⚠️ *KONFIRMASI RESET*\n\n"
+                f"Anda akan menghapus *SEMUA {count} transaksi* hari ini:\n"
+                f"📅 {tanggal}\n\n"
+                f"⚠️ Tindakan ini tidak dapat dibatalkan!\n\n"
+                f"Lanjutkan?",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+
+        except Exception as e:
+            logger.error(f"Error in reset_command: {e}")
+            await update.message.reply_text("❌ Terjadi kesalahan")
+
     async def callback_query_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler untuk inline button callback"""
         query = update.callback_query
@@ -575,7 +648,67 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
 
         data = query.data
 
-        if data.startswith('ocr_save_'):
+        # Handle reset dan modal baru
+        if data.startswith('reset_and_modal_'):
+            try:
+                amount = int(data.split('_')[3])
+                tanggal = datetime.now().strftime('%Y-%m-%d')
+                waktu = datetime.now().strftime('%H:%M:%S')
+
+                # Hapus semua transaksi hari ini
+                deleted_count = self.storage.delete_all_transactions_by_date(tanggal)
+
+                # Simpan modal baru
+                self.storage.add_transaction(
+                    tanggal=tanggal,
+                    waktu=waktu,
+                    tipe='modal',
+                    jumlah=amount,
+                    sumber='manual',
+                    keterangan='',
+                    chat_id=update.effective_chat.id,
+                    user_id=query.from_user.id,
+                    message_id=query.message.message_id
+                )
+
+                await query.edit_message_text(
+                    f"✅ Reset berhasil!\n\n"
+                    f"🗑️ {deleted_count} transaksi lama dihapus\n"
+                    f"💰 Modal awal {format_rupiah(amount)} tersimpan\n"
+                    f"📅 Transaksi hari ini dimulai dari awal"
+                )
+                logger.info(f"Reset and new modal: {amount}, deleted: {deleted_count}")
+
+            except Exception as e:
+                logger.error(f"Error in reset_and_modal: {e}")
+                await query.edit_message_text("❌ Terjadi kesalahan")
+
+        elif data == 'cancel_modal':
+            await query.edit_message_text("❌ Input modal dibatalkan")
+
+        # Handle konfirmasi reset
+        elif data.startswith('confirm_reset_'):
+            try:
+                tanggal = data.split('_')[2]
+                deleted_count = self.storage.delete_all_transactions_by_date(tanggal)
+
+                await query.edit_message_text(
+                    f"✅ Reset berhasil!\n\n"
+                    f"🗑️ {deleted_count} transaksi telah dihapus\n"
+                    f"📅 {tanggal}\n\n"
+                    f"💡 Gunakan /modal untuk memulai transaksi baru"
+                )
+                logger.info(f"Manual reset: {tanggal}, deleted: {deleted_count}")
+
+            except Exception as e:
+                logger.error(f"Error in confirm_reset: {e}")
+                await query.edit_message_text("❌ Terjadi kesalahan")
+
+        elif data == 'cancel_reset':
+            await query.edit_message_text("❌ Reset dibatalkan")
+
+        # Handle OCR save
+        elif data.startswith('ocr_save_'):
             parts = data.split('_')
             if len(parts) >= 4:
                 amount = int(parts[2])
@@ -592,7 +725,7 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
                     sumber='ocr',
                     keterangan='Via OCR',
                     chat_id=update.effective_chat.id,
-                    user_id=update.effective_user.id,
+                    user_id=query.from_user.id,
                     message_id=original_msg_id
                 )
 
@@ -617,6 +750,7 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
         application.add_handler(CommandHandler("status", self.status_command))
         application.add_handler(CommandHandler("lihat", self.lihat_command))
         application.add_handler(CommandHandler("edit", self.edit_command))
+        application.add_handler(CommandHandler("reset", self.reset_command))
 
         application.add_handler(MessageHandler(filters.PHOTO, self.photo_handler))
         application.add_handler(CallbackQueryHandler(self.callback_query_handler))
