@@ -130,12 +130,63 @@ INFO - Bot started...
 
 Bot mendukung berbagai format input:
 
+### Format Dasar:
+
 - `4000` - angka biasa
 - `4k` atau `4K` - ribu
 - `4rb`, `4 ribu` - ribu
 - `4.000`, `4,000` - dengan separator
 - `4jt`, `4 juta` - juta
 - `4m`, `4M` - juta (million)
+
+### Format Penjumlahan (✨ BARU):
+
+Bot bisa menjumlahkan beberapa angka sekaligus:
+
+**Dengan tanda plus (+):**
+
+```
+/tf 2000 + 7000 + 8rb
+/cash 500k + 300rb + 50000
+/modal 1jt + 500rb
+```
+
+**Dengan koma (,):**
+
+```
+/tf 2000, 7000, 8rb
+/keluar 5000, 3rb, 2000
+```
+
+**Untuk pengeluaran dengan keterangan:**
+
+```
+/keluar 2000 beli permen, 4000 plastik
+# Bot akan parsing: 2000 + 4000 = 6000
+# Keterangan: "beli permen, 4000 plastik"
+
+/keluar 5k + 3k + 2rb untuk operasional toko
+# Total: 10.000
+# Keterangan: "untuk operasional toko"
+```
+
+### Contoh Lengkap:
+
+```
+✅ /tf 100000 + 50000 + 25000
+   → Total: Rp175.000
+
+✅ /tf 100k, 50k, 25k
+   → Total: Rp175.000
+
+✅ /keluar 20000 + 15000 + 5000 beli gas
+   → Total: Rp40.000
+   → Keterangan: "beli gas"
+
+✅ /keluar 2k beli permen, 4k plastik, 1k lainnya
+   → Total: Rp7.000
+   → Keterangan: "beli permen, 4k plastik, 1k lainnya"
+```
 
 ## 🧮 Rumus Perhitungan
 

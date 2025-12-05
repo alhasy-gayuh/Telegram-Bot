@@ -32,8 +32,48 @@ def parse_amount(text: str) -> int:
     # Hilangkan prefix "rp" atau "Rp" jika ada
     text = re.sub(r'^rp\.?\s*', '', text, flags=re.IGNORECASE)
 
-    # Deteksi jika ada operator + atau koma (untuk penjumlahan)
-    if '+' in text or ',' in text:
+    # Deteksi jika ada operator penjumlahan
+    # PENTING: Bedakan antara koma sebagai separator (4,000) vs operator (2k, 3k)
+    # Koma adalah operator jika ada spasi atau huruf sebelum/sesudahnya
+    # Contoh: "2k, 3k" atau "2000, 3000" = operator
+    # Contoh: "4,000" atau "1,234,567" = separator
+
+    has_plus = '+' in text
+
+    # Deteksi koma sebagai operator (bukan separator)
+    # Koma adalah operator jika:
+    # 1. Ada spasi sebelum atau sesudah koma, ATAU
+    # 2. Ada huruf (k, rb, jt) sebelum koma
+    has_comma_operator = False
+    if ',' in text:
+        # Check pattern: angka+suffix, angka atau angka , angka
+        # Operator: "2k, 3k" atau "2000, 3000" (ada spasi)
+        # Separator: "4,000" atau "1,234,567" (tidak ada spasi, pure digit)
+        if re.search(r'\s*,\s*', text):  # Ada spasi sekitar koma
+            # Cek apakah ini pattern separator (misal: 1, 234, 567) atau operator
+            # Jika semua part adalah pure digits dengan pola ribuan, maka separator
+            parts = text.split(',')
+            is_separator = True
+
+            # Cek pattern separator ribuan: X,XXX atau X,XXX,XXX
+            if len(parts) >= 2:
+                # Part pertama bisa 1-3 digit
+                first_part = parts[0].strip()
+                if not first_part.isdigit() or len(first_part) > 4:
+                    is_separator = False
+
+                # Part sisanya harus tepat 3 digit
+                for part in parts[1:]:
+                    part_clean = part.strip()
+                    if not part_clean.isdigit() or len(part_clean) != 3:
+                        is_separator = False
+                        break
+
+            has_comma_operator = not is_separator
+        elif re.search(r'[a-z]+,', text):  # Ada huruf sebelum koma (misal: 2k,)
+            has_comma_operator = True
+
+    if has_plus or has_comma_operator:
         return parse_amount_with_sum(text)
 
     # Parse single amount (existing logic)
@@ -45,317 +85,19 @@ def parse_single_amount(text: str) -> int:
     Parse single amount (tanpa penjumlahan)
     Helper function untuk parse_amount
     """
+    text = text.strip().lower()
+
     # Deteksi suffix multiplier
     multiplier = 1
 
     # Juta (jt, juta, m, million)
-    if re.search(r'(jt|juta|m|million)
-
-
-def format_rupiah(amount: Union[int, float]) -> str:
-    """
-    Format angka menjadi format Rupiah dengan separator titik
-
-    Examples:
-    - 1000 -> "Rp1.000"
-    - 1234567 -> "Rp1.234.567"
-    - -5000 -> "-Rp5.000"
-
-    Returns: string formatted rupiah
-    """
-    # Handle negative
-    is_negative = amount < 0
-    amount = abs(amount)
-
-    # Convert to int (rupiah tidak ada desimal)
-    amount = int(amount)
-
-    # Format dengan separator titik
-    formatted = f"{amount:,}".replace(',', '.')
-
-    # Add prefix
-    if is_negative:
-        return f"-Rp{formatted}"
-    return f"Rp{formatted}"
-
-
-def parse_date(text: str) -> str:
-    """
-    STUB: Parse natural date string menjadi YYYY-MM-DD
-    Untuk future enhancement (misal: "kemarin", "minggu lalu", dll)
-
-    Untuk sekarang, return format YYYY-MM-DD atau raise error
-    """
-    # TODO: Implementasi natural date parsing
-    # Contoh: "kemarin" -> "2025-12-04"
-    #         "minggu lalu" -> range
-    #         "1 des" -> "2025-12-01"
-
-    # Sementara, hanya support format YYYY-MM-DD
-    if re.match(r'\d{4}-\d{2}-\d{2}', text):
-        return text
-
-    raise ValueError("Format tanggal harus YYYY-MM-DD (misal: 2025-12-05)")
-
-
-def validate_transaction_type(tipe: str) -> bool:
-    """
-    Validasi apakah tipe transaksi valid
-    """
-    valid_types = ['modal', 'cash', 'tf', 'keluar', 'pos']
-    return tipe.lower() in valid_types
-
-
-def sanitize_text(text: str, max_length: int = 200) -> str:
-    """
-    Sanitize text input untuk menghindari injection atau overflow
-    """
-    if not text:
-        return ''
-
-    # Trim whitespace
-    text = text.strip()
-
-    # Limit length
-    if len(text) > max_length:
-        text = text[:max_length]
-
-    # Remove control characters (kecuali newline dan tab)
-    text = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', text)
-
-    return text
-, text):
+    if re.search(r'(jt|juta|m|million)$', text):
         multiplier = 1_000_000
-        text = re.sub(r'(jt|juta|m|million)
-
-
-def format_rupiah(amount: Union[int, float]) -> str:
-    """
-    Format angka menjadi format Rupiah dengan separator titik
-
-    Examples:
-    - 1000 -> "Rp1.000"
-    - 1234567 -> "Rp1.234.567"
-    - -5000 -> "-Rp5.000"
-
-    Returns: string formatted rupiah
-    """
-    # Handle negative
-    is_negative = amount < 0
-    amount = abs(amount)
-
-    # Convert to int (rupiah tidak ada desimal)
-    amount = int(amount)
-
-    # Format dengan separator titik
-    formatted = f"{amount:,}".replace(',', '.')
-
-    # Add prefix
-    if is_negative:
-        return f"-Rp{formatted}"
-    return f"Rp{formatted}"
-
-
-def parse_date(text: str) -> str:
-    """
-    STUB: Parse natural date string menjadi YYYY-MM-DD
-    Untuk future enhancement (misal: "kemarin", "minggu lalu", dll)
-
-    Untuk sekarang, return format YYYY-MM-DD atau raise error
-    """
-    # TODO: Implementasi natural date parsing
-    # Contoh: "kemarin" -> "2025-12-04"
-    #         "minggu lalu" -> range
-    #         "1 des" -> "2025-12-01"
-
-    # Sementara, hanya support format YYYY-MM-DD
-    if re.match(r'\d{4}-\d{2}-\d{2}', text):
-        return text
-
-    raise ValueError("Format tanggal harus YYYY-MM-DD (misal: 2025-12-05)")
-
-
-def validate_transaction_type(tipe: str) -> bool:
-    """
-    Validasi apakah tipe transaksi valid
-    """
-    valid_types = ['modal', 'cash', 'tf', 'keluar', 'pos']
-    return tipe.lower() in valid_types
-
-
-def sanitize_text(text: str, max_length: int = 200) -> str:
-    """
-    Sanitize text input untuk menghindari injection atau overflow
-    """
-    if not text:
-        return ''
-
-    # Trim whitespace
-    text = text.strip()
-
-    # Limit length
-    if len(text) > max_length:
-        text = text[:max_length]
-
-    # Remove control characters (kecuali newline dan tab)
-    text = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', text)
-
-    return text
-, '', text).strip()
+        text = re.sub(r'(jt|juta|m|million)$', '', text).strip()
     # Ribu (k, rb, ribu, thousand)
-    elif re.search(r'(k|rb|ribu|thousand)
-
-
-def format_rupiah(amount: Union[int, float]) -> str:
-    """
-    Format angka menjadi format Rupiah dengan separator titik
-
-    Examples:
-    - 1000 -> "Rp1.000"
-    - 1234567 -> "Rp1.234.567"
-    - -5000 -> "-Rp5.000"
-
-    Returns: string formatted rupiah
-    """
-    # Handle negative
-    is_negative = amount < 0
-    amount = abs(amount)
-
-    # Convert to int (rupiah tidak ada desimal)
-    amount = int(amount)
-
-    # Format dengan separator titik
-    formatted = f"{amount:,}".replace(',', '.')
-
-    # Add prefix
-    if is_negative:
-        return f"-Rp{formatted}"
-    return f"Rp{formatted}"
-
-
-def parse_date(text: str) -> str:
-    """
-    STUB: Parse natural date string menjadi YYYY-MM-DD
-    Untuk future enhancement (misal: "kemarin", "minggu lalu", dll)
-
-    Untuk sekarang, return format YYYY-MM-DD atau raise error
-    """
-    # TODO: Implementasi natural date parsing
-    # Contoh: "kemarin" -> "2025-12-04"
-    #         "minggu lalu" -> range
-    #         "1 des" -> "2025-12-01"
-
-    # Sementara, hanya support format YYYY-MM-DD
-    if re.match(r'\d{4}-\d{2}-\d{2}', text):
-        return text
-
-    raise ValueError("Format tanggal harus YYYY-MM-DD (misal: 2025-12-05)")
-
-
-def validate_transaction_type(tipe: str) -> bool:
-    """
-    Validasi apakah tipe transaksi valid
-    """
-    valid_types = ['modal', 'cash', 'tf', 'keluar', 'pos']
-    return tipe.lower() in valid_types
-
-
-def sanitize_text(text: str, max_length: int = 200) -> str:
-    """
-    Sanitize text input untuk menghindari injection atau overflow
-    """
-    if not text:
-        return ''
-
-    # Trim whitespace
-    text = text.strip()
-
-    # Limit length
-    if len(text) > max_length:
-        text = text[:max_length]
-
-    # Remove control characters (kecuali newline dan tab)
-    text = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', text)
-
-    return text
-, text):
+    elif re.search(r'(k|rb|ribu|thousand)$', text):
         multiplier = 1_000
-        text = re.sub(r'(k|rb|ribu|thousand)
-
-
-def format_rupiah(amount: Union[int, float]) -> str:
-    """
-    Format angka menjadi format Rupiah dengan separator titik
-
-    Examples:
-    - 1000 -> "Rp1.000"
-    - 1234567 -> "Rp1.234.567"
-    - -5000 -> "-Rp5.000"
-
-    Returns: string formatted rupiah
-    """
-    # Handle negative
-    is_negative = amount < 0
-    amount = abs(amount)
-
-    # Convert to int (rupiah tidak ada desimal)
-    amount = int(amount)
-
-    # Format dengan separator titik
-    formatted = f"{amount:,}".replace(',', '.')
-
-    # Add prefix
-    if is_negative:
-        return f"-Rp{formatted}"
-    return f"Rp{formatted}"
-
-
-def parse_date(text: str) -> str:
-    """
-    STUB: Parse natural date string menjadi YYYY-MM-DD
-    Untuk future enhancement (misal: "kemarin", "minggu lalu", dll)
-
-    Untuk sekarang, return format YYYY-MM-DD atau raise error
-    """
-    # TODO: Implementasi natural date parsing
-    # Contoh: "kemarin" -> "2025-12-04"
-    #         "minggu lalu" -> range
-    #         "1 des" -> "2025-12-01"
-
-    # Sementara, hanya support format YYYY-MM-DD
-    if re.match(r'\d{4}-\d{2}-\d{2}', text):
-        return text
-
-    raise ValueError("Format tanggal harus YYYY-MM-DD (misal: 2025-12-05)")
-
-
-def validate_transaction_type(tipe: str) -> bool:
-    """
-    Validasi apakah tipe transaksi valid
-    """
-    valid_types = ['modal', 'cash', 'tf', 'keluar', 'pos']
-    return tipe.lower() in valid_types
-
-
-def sanitize_text(text: str, max_length: int = 200) -> str:
-    """
-    Sanitize text input untuk menghindari injection atau overflow
-    """
-    if not text:
-        return ''
-
-    # Trim whitespace
-    text = text.strip()
-
-    # Limit length
-    if len(text) > max_length:
-        text = text[:max_length]
-
-    # Remove control characters (kecuali newline dan tab)
-    text = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', text)
-
-    return text
-, '', text).strip()
+        text = re.sub(r'(k|rb|ribu|thousand)$', '', text).strip()
 
     # Hilangkan separator (titik, koma, spasi)
     text = text.replace('.', '').replace(',', '').replace(' ', '')
