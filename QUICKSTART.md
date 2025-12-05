@@ -85,6 +85,23 @@ INFO - Bot started...
 /status
 ```
 
+4. **✨ Test fitur penjumlahan (NEW):**
+
+```
+# Penjumlahan dengan +
+/tf 100k + 50k + 25k
+/modal 1jt + 500rb
+/cash 800k + 200k + 100rb
+
+# Penjumlahan dengan koma
+/tf 100k, 50k, 25k
+/keluar 5k, 3k, 2k untuk operasional
+
+# Pengeluaran dengan keterangan
+/keluar 2000 beli permen, 4000 plastik
+/keluar 10k + 5k + 3k beli bahan toko
+```
+
 ## ✅ Verifikasi
 
 Bot berjalan dengan baik jika:

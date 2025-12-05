@@ -4,6 +4,7 @@ Entry point utama bot
 """
 
 import logging
+import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -18,7 +19,6 @@ from storage import Storage
 from logic import FinancialLogic
 from utils import parse_amount, format_rupiah
 from datetime import datetime
-import asyncio
 
 # Setup logging
 logging.basicConfig(
@@ -50,6 +50,7 @@ Perintah yang tersedia:
 
 Format angka yang didukung:
 • 4000, 4k, 4K, 4rb, 4.000, 4,000, 4jt, dll
+• Penjumlahan: 2k + 3k + 5k atau 2k, 3k, 5k
         """
         await update.message.reply_text(welcome_message, parse_mode='Markdown')
 
@@ -181,11 +182,41 @@ Format angka yang didukung:
                 await update.message.reply_text("❌ Format: /keluar <jumlah> [keterangan]\nContoh: /keluar 200000 beli gas")
                 return
 
-            # Parse jumlah (ambil kata pertama)
-            amount = parse_amount(context.args[0])
+            # Gabungkan semua args
+            full_text = ' '.join(context.args)
 
-            # Parse keterangan (sisa kata)
-            keterangan = ' '.join(context.args[1:]) if len(context.args) > 1 else ''
+            # Strategi parsing: cari semua token di awal yang bisa diparsing sebagai angka atau operator
+            tokens = full_text.split()
+            amount_tokens = []
+            keterangan_tokens = []
+            found_text = False
+
+            for token in tokens:
+                # Cek apakah token ini angka, +, atau format angka (4k, 5rb, dll)
+                if not found_text:
+                    # Coba parse sebagai angka atau operator
+                    if token == '+':
+                        amount_tokens.append('+')
+                    elif self._is_amount_token(token):
+                        amount_tokens.append(token)
+                    else:
+                        # Token pertama yang bukan angka = mulai keterangan
+                        found_text = True
+                        keterangan_tokens.append(token)
+                else:
+                    keterangan_tokens.append(token)
+
+            # Build amount string
+            amount_str = ' '.join(amount_tokens) if amount_tokens else ''
+            keterangan = ' '.join(keterangan_tokens) if keterangan_tokens else ''
+
+            # Jika tidak ada amount_str, berarti format salah
+            if not amount_str:
+                await update.message.reply_text("❌ Format: /keluar <jumlah> [keterangan]\nContoh: /keluar 200000 beli gas\nAtau: /keluar 2000 + 7000 + 8rb")
+                return
+
+            # Parse amount (sudah support penjumlahan)
+            amount = parse_amount(amount_str)
 
             if amount <= 0:
                 await update.message.reply_text("❌ Jumlah harus lebih dari 0")
@@ -208,16 +239,22 @@ Format angka yang didukung:
 
             msg = f"✅ Pengeluaran {format_rupiah(amount)} tercatat."
             if keterangan:
-                msg += f" ({keterangan})"
+                msg += f"\n📝 Keterangan: {keterangan}"
 
             await update.message.reply_text(msg)
-            logger.info(f"Pengeluaran saved: {amount} by user {update.effective_user.id}")
+            logger.info(f"Pengeluaran saved: {amount} ({keterangan}) by user {update.effective_user.id}")
 
         except ValueError as e:
-            await update.message.reply_text(f"❌ Format angka tidak valid: {str(e)}")
+            await update.message.reply_text(f"❌ {str(e)}\n\nContoh format:\n• /keluar 200000 beli gas\n• /keluar 2000 + 7000 + 8rb\n• /keluar 2k + 4k operasional")
         except Exception as e:
             logger.error(f"Error in keluar_command: {e}")
             await update.message.reply_text("❌ Terjadi kesalahan saat menyimpan pengeluaran")
+
+    def _is_amount_token(self, token: str) -> bool:
+        """Helper untuk cek apakah token adalah angka atau format angka"""
+        # Pattern untuk angka dengan optional suffix (k, rb, jt, dll) dan separator (. atau ,)
+        pattern = r'^[\d\.,]+[kmjtrbibulanosnd]*$'
+        return bool(re.match(pattern, token.lower()))
 
     async def totalpos_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler untuk /totalpos <amount>"""
