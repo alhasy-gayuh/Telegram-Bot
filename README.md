@@ -116,15 +116,71 @@ INFO - Bot started...
 
 ## 📱 Command yang Tersedia
 
-| Command                  | Fungsi                        | Contoh                 |
-| ------------------------ | ----------------------------- | ---------------------- |
-| `/modal <jumlah>`        | Catat modal awal hari ini     | `/modal 500rb`         |
-| `/cash <jumlah>`         | Catat cash akhir di laci      | `/cash 1.2jt`          |
-| `/tf <jumlah>`           | Catat transfer/QRIS masuk     | `/tf 800000`           |
-| `/keluar <jumlah> [ket]` | Catat pengeluaran             | `/keluar 50k beli gas` |
-| `/totalpos <jumlah>`     | Input omzet POS               | `/totalpos 2100000`    |
-| `/status`                | Lihat rekap & status hari ini | `/status`              |
-| `/lihat`                 | Lihat daftar transaksi        | `/lihat`               |
+| Command                  | Fungsi                        | Contoh                   |
+| ------------------------ | ----------------------------- | ------------------------ |
+| `/modal <jumlah>`        | Catat modal awal hari ini     | `/modal 500rb`           |
+| `/cash <jumlah>`         | Catat cash akhir di laci      | `/cash 1.2jt`            |
+| `/tf <jumlah>`           | Catat transfer/QRIS masuk     | `/tf 800k`               |
+| `/keluar <jumlah> [ket]` | Catat pengeluaran             | `/keluar 50k beli gas`   |
+| `/totalpos <jumlah>`     | Input omzet POS               | `/totalpos 2.1jt`        |
+| `/status`                | Lihat rekap & status hari ini | `/status`                |
+| `/lihat`                 | Lihat daftar transaksi        | `/lihat`                 |
+| `/edit [ID]`             | Edit/hapus transaksi          | `/edit` atau `/edit 123` |
+
+### 🔧 Cara Menggunakan `/edit`
+
+Command `/edit` memiliki beberapa mode:
+
+**1. Tampilkan daftar transaksi:**
+
+```bash
+/edit
+# Menampilkan 10 transaksi terbaru dengan ID-nya
+```
+
+**2. Lihat detail transaksi:**
+
+```bash
+/edit 123
+# Menampilkan detail transaksi dengan ID 123
+```
+
+**3. Hapus transaksi:**
+
+```bash
+/edit 123 hapus
+# Menghapus transaksi dengan ID 123
+```
+
+**4. Ubah jumlah:**
+
+```bash
+/edit 123 150k
+# Mengubah jumlah transaksi ID 123 menjadi 150.000
+```
+
+**5. Ubah keterangan (untuk pengeluaran):**
+
+```bash
+/edit 123 ket beli gas dan token listrik
+# Mengubah keterangan transaksi ID 123
+```
+
+### ⚠️ Validasi Input
+
+Bot akan **TIDAK menyimpan** data jika format salah:
+
+```bash
+# ❌ Format salah - TIDAK tersimpan
+/tf abcdef
+→ Bot: "❌ Format tidak valid. Data TIDAK tersimpan."
+
+# ✅ Format benar - Tersimpan
+/tf 100k
+→ Bot: "✅ Transfer/QRIS Rp100.000 tercatat"
+```
+
+Ini mencegah data duplikat saat user salah ketik dan input ulang.
 
 ## 💰 Format Angka yang Didukung
 
