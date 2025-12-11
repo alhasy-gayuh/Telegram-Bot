@@ -18,6 +18,7 @@ from config import Config
 from storage import Storage
 from logic import FinancialLogic
 from utils import parse_amount, format_rupiah
+from ocr_gemini import GeminiClient
 from datetime import datetime
 
 # Setup logging
@@ -33,6 +34,7 @@ class TokoBot:
         self.config = Config()
         self.storage = Storage(self.config.DB_PATH)
         self.logic = FinancialLogic(self.storage)
+        self.gemini = GeminiClient()
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler untuk command /start"""
@@ -585,25 +587,79 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
             await update.message.reply_text("❌ Terjadi kesalahan")
 
     async def photo_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handler untuk foto (OCR - TODO)"""
+        """Handler untuk foto (OCR via Gemini)"""
         try:
-            caption = update.message.caption if update.message.caption else ''
-            caption_lower = caption.lower().strip()
-
-            if 'tf' not in caption_lower and 'transfer' not in caption_lower:
+            # 1. Download foto kualitas tertinggi
+            if not update.message.photo:
                 return
 
             photo = update.message.photo[-1]
             file_id = photo.file_id
 
-            await update.message.reply_text(
-                "📷 Foto diterima\n⚠️ Fitur OCR belum aktif\nGunakan /tf <jumlah>"
-            )
+            # Beri feedback sedang memproses
+            processing_msg = await update.message.reply_text("⏳ Sedang menganalisa gambar...")
 
-            logger.info(f"Photo received: {file_id}")
+            # Download file
+            new_file = await context.bot.get_file(file_id)
+            file_byte_array = await new_file.download_as_bytearray()
+            file_bytes = bytes(file_byte_array)
+
+            # 2. Kirim ke Gemini
+            if not self.gemini or not self.gemini.model:
+                await processing_msg.edit_text("⚠️ Fitur OCR belum dikonfigurasi (API Key missing).")
+                return
+
+            result = self.gemini.analyze_transfer_image(file_bytes)
+
+            # 3. Proses hasil
+            if result['is_transfer'] and result['amount'] > 0:
+                amount = result['amount']
+                confidence = result['confidence']
+                reason = result.get('reason', 'Transfer detected')
+
+                tanggal = datetime.now().strftime('%Y-%m-%d')
+                waktu = datetime.now().strftime('%H:%M:%S')
+
+                # Simpan transaksi
+                tx_id = self.storage.add_transaction(
+                    tanggal=tanggal,
+                    waktu=waktu,
+                    tipe='tf',
+                    jumlah=amount,
+                    sumber='ocr_gemini',
+                    keterangan=f"OCR: {reason}",
+                    chat_id=update.effective_chat.id,
+                    user_id=update.effective_user.id,
+                    message_id=update.message.message_id,
+                    file_id=file_id
+                )
+
+                # Feedback sukses
+                await processing_msg.edit_text(
+                    f"✅ *TRANSFER TERDETEKSI*\n\n"
+                    f"💰 Nominal: {format_rupiah(amount)}\n"
+                    f"📝 Catatan: {reason}\n"
+                    f"🤖 Confidence: {int(confidence * 100)}%\n\n"
+                    f"Data berhasil disimpan sebagai transaksi TF hari ini.",
+                    parse_mode='Markdown'
+                )
+                logger.info(f"OCR Success: {amount} from user {update.effective_user.id}")
+
+            else:
+                # Feedback gagal
+                reason = result.get('reason', 'Tidak terdeteksi sebagai bukti transfer')
+                await processing_msg.edit_text(
+                    f"⚠️ *OCR TIDAK YAKIN*\n\n"
+                    f"Analisa AI: {reason}\n\n"
+                    f"Silakan input manual dengan:\n"
+                    f"`/tf <jumlah>`",
+                    parse_mode='Markdown'
+                )
+                logger.info(f"OCR Failed/Ignored: {reason}")
 
         except Exception as e:
             logger.error(f"Error in photo_handler: {e}")
+            await update.message.reply_text("❌ Gagal memproses gambar")
 
     async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler untuk /reset - reset transaksi hari ini"""

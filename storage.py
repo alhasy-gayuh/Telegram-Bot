@@ -200,6 +200,29 @@ class Storage:
             return True
         return False
 
+    def update_transaction(self, transaction_id: int, jumlah: float = None, keterangan: str = None) -> bool:
+        """
+        Update transaksi (jumlah atau keterangan)
+        Returns: True jika berhasil
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        if jumlah is not None:
+            cursor.execute('UPDATE transactions SET jumlah = ? WHERE id = ?', (jumlah, transaction_id))
+
+        if keterangan is not None:
+            cursor.execute('UPDATE transactions SET keterangan = ? WHERE id = ?', (keterangan, transaction_id))
+
+        conn.commit()
+        affected = cursor.rowcount
+        conn.close()
+
+        if affected > 0:
+            logger.info(f"Transaction updated: ID={transaction_id}")
+            return True
+        return False
+
     def get_recent_transactions(self, tanggal: str, limit: int = 10) -> List[Tuple]:
         """
         Mengambil transaksi terbaru untuk tanggal tertentu

@@ -32,3 +32,6 @@ class Config:
     # OCR Callback endpoint (jika menggunakan FastAPI/Flask)
     OCR_CALLBACK_PORT = int(os.getenv('OCR_CALLBACK_PORT', '8000'))
     OCR_CALLBACK_PATH = os.getenv('OCR_CALLBACK_PATH', '/ocr-transfer-result')
+
+    # Gemini API Key
+    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
