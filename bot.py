@@ -587,17 +587,12 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
             await update.message.reply_text("❌ Terjadi kesalahan")
 
     async def photo_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-<<<<<<< HEAD
         """Handler untuk foto (OCR via Gemini)"""
-=======
-        """Handler untuk foto (OCR - TODO)"""
->>>>>>> 3507ac5a1d5d14260d74c8b52cddb5a329425722
         try:
             # 1. Download foto kualitas tertinggi
             if not update.message.photo:
                 return
 
-<<<<<<< HEAD
             photo = update.message.photo[-1]
             file_id = photo.file_id
 
@@ -661,19 +656,6 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
                     parse_mode='Markdown'
                 )
                 logger.info(f"OCR Failed/Ignored: {reason}")
-=======
-            if 'tf' not in caption_lower and 'transfer' not in caption_lower:
-                return
-
-            photo = update.message.photo[-1]
-            file_id = photo.file_id
-
-            await update.message.reply_text(
-                "📷 Foto diterima\n⚠️ Fitur OCR belum aktif\nGunakan /tf <jumlah>"
-            )
-
-            logger.info(f"Photo received: {file_id}")
->>>>>>> 3507ac5a1d5d14260d74c8b52cddb5a329425722
 
         except Exception as e:
             logger.error(f"Error in photo_handler: {e}")

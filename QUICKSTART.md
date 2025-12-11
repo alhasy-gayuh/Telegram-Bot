@@ -6,6 +6,7 @@ Panduan setup cepat dalam 5 menit!
 
 - [ ] Python 3.10+ terinstall
 - [ ] Bot Token dari @BotFather
+- [ ] Gemini API Key dari Google AI Studio (untuk OCR)
 - [ ] Text editor (VS Code, Notepad++, dll)
 - [ ] Terminal/Command Prompt
 
@@ -25,6 +26,7 @@ cd toko-bot
 # - storage.py
 # - logic.py
 # - utils.py
+# - ocr_gemini.py
 # - requirements.txt
 # - .env.example
 
@@ -48,14 +50,21 @@ pip install -r requirements.txt
 cp .env.example .env
 
 # Edit .env dengan text editor
-# WAJIB isi: TELEGRAM_BOT_TOKEN
+# WAJIB isi: TELEGRAM_BOT_TOKEN dan GEMINI_API_KEY
 ```
 
 **Isi .env minimal:**
 
 ```env
 TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN_HERE
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
 ```
+
+> 💡 **Cara dapat Gemini API Key:**
+> 1. Buka [Google AI Studio](https://aistudio.google.com/apikey)
+> 2. Login dengan akun Google
+> 3. Klik "Create API Key"
+> 4. Copy dan paste ke `.env`
 
 ### 3️⃣ Jalankan Bot (1 detik)
 
@@ -67,6 +76,7 @@ python bot.py
 
 ```
 INFO - Database initialized at toko_keuangan.db
+INFO - GeminiClient initialized successfully
 INFO - Bot started...
 ```
 
@@ -85,7 +95,17 @@ INFO - Bot started...
 /status
 ```
 
-4. **✨ Test fitur penjumlahan (NEW):**
+4. **✨ Test fitur OCR (NEW):**
+
+```
+📷 Kirim foto bukti transfer/QRIS langsung ke bot
+Bot akan otomatis:
+- Menganalisa gambar dengan AI
+- Mendeteksi nominal transfer
+- Menyimpan sebagai transaksi TF
+```
+
+5. **✨ Test fitur penjumlahan:**
 
 ```
 # Penjumlahan dengan +
@@ -110,6 +130,7 @@ Bot berjalan dengan baik jika:
 - ✅ Bisa simpan transaksi
 - ✅ `/status` menampilkan perhitungan
 - ✅ File `toko_keuangan.db` terbuat
+- ✅ OCR mendeteksi foto transfer dengan benar
 
 ## 🎯 Next Steps
 
@@ -125,10 +146,6 @@ Bot berjalan dengan baik jika:
    # Crontab untuk backup harian
    0 2 * * * cp /path/to/toko_keuangan.db /backup/toko_$(date +\%Y\%m\%d).db
    ```
-
-3. **Setup OCR** (future - skip dulu)
-   - Nanti jika sudah butuh
-   - Lihat README.md bagian OCR
 
 ## 🔥 Pro Tips
 
@@ -167,6 +184,9 @@ A: Pastikan bot sudah di-add ke grup dan bisa lihat semua messages.
 **Q: Error "TELEGRAM_BOT_TOKEN tidak ditemukan"?**
 A: File `.env` belum dibuat atau token belum diisi.
 
+**Q: OCR tidak jalan / error?**
+A: Pastikan `GEMINI_API_KEY` sudah diisi di `.env` dan valid.
+
 **Q: Cara stop bot?**
 A: Tekan `Ctrl+C` di terminal.
 
@@ -184,6 +204,7 @@ A: Gunakan format yang didukung: `4000`, `4k`, `4rb`, `4.000`, `4jt`
 | Database locked     | Tutup semua connection, restart bot |
 | Bot tidak start     | Cek token di `.env`                 |
 | Command tidak kerja | Cek typo di command                 |
+| OCR tidak jalan     | Cek `GEMINI_API_KEY` di `.env`      |
 
 ## 📞 Butuh Bantuan?
 
@@ -195,6 +216,6 @@ A: Gunakan format yang didukung: `4000`, `4k`, `4rb`, `4.000`, `4jt`
 
 **Total setup time:** ~5 menit
 **Siap produksi:** ✅ Yes
-**OCR ready:** ⏳ Future (stub sudah ada)
+**OCR ready:** ✅ Yes (dengan Gemini AI)
 
 Selamat mencoba! 🎉

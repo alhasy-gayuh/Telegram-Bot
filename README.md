@@ -1,6 +1,6 @@
 # Bot Telegram Pencatatan Keuangan Toko
 
-Bot untuk mencatat dan mengelola keuangan harian toko dengan perhitungan otomatis dan rekap harian.
+Bot untuk mencatat dan mengelola keuangan harian toko dengan perhitungan otomatis, rekap harian, dan **OCR otomatis via Google Gemini AI**.
 
 ## 📁 Struktur File
 
@@ -11,7 +11,7 @@ toko-bot/
 ├── storage.py             # Layer penyimpanan (SQLite)
 ├── logic.py               # Business logic perhitungan
 ├── utils.py               # Helper functions (parse, format)
-├── ocr_endpoint.py        # [OPTIONAL] Endpoint callback OCR
+├── ocr_gemini.py          # Modul OCR dengan Google Gemini AI
 ├── requirements.txt       # Python dependencies
 ├── .env                   # Environment variables (buat sendiri)
 ├── .env.example          # Template .env
@@ -27,6 +27,12 @@ toko-bot/
 1. Buka [@BotFather](https://t.me/BotFather) di Telegram
 2. Ketik `/newbot` dan ikuti instruksi
 3. Simpan **Bot Token** yang diberikan
+
+**Dapatkan Gemini API Key (untuk fitur OCR):**
+
+1. Buka [Google AI Studio](https://aistudio.google.com/apikey)
+2. Buat API Key baru
+3. Simpan API Key untuk digunakan nanti
 
 **Clone/Download kode:**
 
@@ -72,14 +78,15 @@ pip install -r requirements.txt
 # Copy dari template
 cp .env.example .env
 
-# Edit .env dan isi TELEGRAM_BOT_TOKEN
+# Edit .env dan isi TELEGRAM_BOT_TOKEN dan GEMINI_API_KEY
 nano .env  # atau text editor lain
 ```
 
-**Isi minimal di `.env`:**
+**Isi di `.env`:**
 
 ```env
 TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz123456789
+GEMINI_API_KEY=AIzaSyYourGeminiApiKeyHere
 ```
 
 ### 4. Jalankan Bot
@@ -92,6 +99,7 @@ Jika berhasil, akan muncul log:
 
 ```
 INFO - Database initialized at toko_keuangan.db
+INFO - GeminiClient initialized successfully
 INFO - Bot started...
 ```
 
@@ -114,6 +122,14 @@ INFO - Bot started...
 /lihat
 ```
 
+4. **✨ Test fitur OCR (NEW):**
+
+Kirim foto bukti transfer/QRIS ke bot. Bot akan otomatis:
+- Menganalisa gambar dengan AI
+- Mendeteksi apakah ini bukti transfer
+- Mengekstrak nominal
+- Menyimpan sebagai transaksi TF
+
 ## 📱 Command yang Tersedia
 
 | Command                  | Fungsi                        | Contoh                   |
@@ -126,6 +142,38 @@ INFO - Bot started...
 | `/status`                | Lihat rekap & status hari ini | `/status`                |
 | `/lihat`                 | Lihat daftar transaksi        | `/lihat`                 |
 | `/edit [ID]`             | Edit/hapus transaksi          | `/edit` atau `/edit 123` |
+| `/reset`                 | Reset transaksi hari ini      | `/reset`                 |
+| 📷 **Kirim Foto**        | OCR otomatis via Gemini AI    | Kirim foto struk transfer |
+
+### 📷 Fitur OCR Otomatis (NEW!)
+
+Cukup kirim foto bukti transfer ke bot, dan AI akan:
+
+1. **Menganalisa gambar** - Mendeteksi apakah ini bukti transfer/QRIS
+2. **Mengekstrak nominal** - Membaca jumlah transfer dari gambar
+3. **Menyimpan otomatis** - Data tersimpan sebagai transaksi TF
+4. **Konfirmasi** - Bot mengirim pesan konfirmasi dengan detail
+
+**Contoh response sukses:**
+```
+✅ TRANSFER TERDETEKSI
+
+💰 Nominal: Rp125.000
+📝 Catatan: QRIS payment detected
+🤖 Confidence: 95%
+
+Data berhasil disimpan sebagai transaksi TF hari ini.
+```
+
+**Jika gambar tidak jelas:**
+```
+⚠️ OCR TIDAK YAKIN
+
+Analisa AI: Gambar buram, tidak terlihat nominal
+
+Silakan input manual dengan:
+/tf <jumlah>
+```
 
 ### 🔧 Cara Menggunakan `/edit`
 
@@ -195,7 +243,7 @@ Bot mendukung berbagai format input:
 - `4jt`, `4 juta` - juta
 - `4m`, `4M` - juta (million)
 
-### Format Penjumlahan (✨ BARU):
+### Format Penjumlahan:
 
 Bot bisa menjumlahkan beberapa angka sekaligus:
 
@@ -226,24 +274,6 @@ Bot bisa menjumlahkan beberapa angka sekaligus:
 # Keterangan: "untuk operasional toko"
 ```
 
-### Contoh Lengkap:
-
-```
-✅ /tf 100000 + 50000 + 25000
-   → Total: Rp175.000
-
-✅ /tf 100k, 50k, 25k
-   → Total: Rp175.000
-
-✅ /keluar 20000 + 15000 + 5000 beli gas
-   → Total: Rp40.000
-   → Keterangan: "beli gas"
-
-✅ /keluar 2k beli permen, 4k plastik, 1k lainnya
-   → Total: Rp7.000
-   → Keterangan: "beli permen, 4k plastik, 1k lainnya"
-```
-
 ## 🧮 Rumus Perhitungan
 
 Bot menggunakan rumus fixed yang **TIDAK BOLEH diubah**:
@@ -268,7 +298,7 @@ Bot menggunakan rumus fixed yang **TIDAK BOLEH diubah**:
 
    ```
    omzetManual = S_cash + totalTF
-               = totalCash - modal + totalPengeluaran + totalTF
+              = totalCash - modal + totalPengeluaran + totalTF
    ```
 
 3. **Selisih:**
@@ -297,7 +327,7 @@ Bot menggunakan **SQLite** dengan struktur:
 - waktu (HH:MM:SS)
 - tipe (modal/cash/tf/keluar/pos)
 - jumlah (REAL)
-- sumber (manual/ocr)
+- sumber (manual/ocr_gemini)
 - keterangan (TEXT)
 - chat_id, user_id, message_id
 - file_id (untuk foto)
@@ -323,51 +353,43 @@ THRESHOLD_SELISIH_BESAR=5000
 # Path database custom
 DB_PATH=/path/to/custom.db
 
-# N8N OCR URL (untuk integrasi OCR - opsional)
-N8N_OCR_URL=http://localhost:5678/webhook/ocr-transfer
+# Gemini API Key (WAJIB untuk OCR)
+GEMINI_API_KEY=AIzaSy...
 ```
 
-## 🤖 Integrasi OCR (Future - STUB)
+## 🤖 Integrasi OCR dengan Gemini AI
 
-Bot sudah disiapkan untuk integrasi OCR, tapi **belum diimplementasi penuh**.
+Bot menggunakan **Google Gemini 2.0 Flash** untuk OCR otomatis:
 
-### Yang Sudah Disiapkan:
+### Cara Kerja:
 
-1. ✅ Handler untuk foto dengan caption 'tf'
-2. ✅ Skeleton fungsi `send_to_ocr_service()`
-3. ✅ Callback handler untuk button konfirmasi
-4. ✅ File `ocr_endpoint.py` untuk menerima hasil OCR
-
-### Yang Perlu Dilengkapi Nanti:
-
-- [ ] Implementasi HTTP POST ke n8n OCR service
-- [ ] N8n workflow untuk OCR (Google Vision / Tesseract)
-- [ ] Download file dari Telegram API
-- [ ] Error handling untuk OCR gagal
-
-### Cara Mengaktifkan OCR (Nanti):
-
-1. **Jalankan OCR endpoint terpisah:**
-
-   ```bash
-   # Install dulu FastAPI (uncomment di requirements.txt)
-   pip install fastapi uvicorn
-
-   # Jalankan endpoint
-   uvicorn ocr_endpoint:app --host 0.0.0.0 --port 8000
+1. User kirim foto ke bot
+2. Bot download foto dari Telegram
+3. Bot kirim ke Gemini API untuk analisis
+4. Gemini mengembalikan JSON terstruktur:
+   ```json
+   {
+     "is_transfer": true,
+     "amount": 125000,
+     "confidence": 0.95,
+     "reason": "QRIS payment detected"
+   }
    ```
+5. Bot menyimpan transaksi jika valid
+6. Bot kirim konfirmasi ke user
 
-2. **Setup n8n workflow:**
+### Yang Bisa Dideteksi:
 
-   - Terima webhook dari Python bot
-   - Proses gambar dengan OCR (Google Vision API / Tesseract)
-   - Parse hasil OCR untuk detect transfer
-   - Callback ke `http://your-server:8000/ocr-transfer-result`
+- ✅ Screenshot transfer m-banking
+- ✅ Bukti pembayaran QRIS
+- ✅ Struk transfer antar bank
+- ✅ Notifikasi pembayaran
 
-3. **Update `.env`:**
-   ```env
-   N8N_OCR_URL=http://your-n8n-server:5678/webhook/ocr-transfer
-   ```
+### Yang TIDAK Dideteksi:
+
+- ❌ Foto yang buram/tidak jelas
+- ❌ Screenshot chat biasa
+- ❌ Foto produk/selfie
 
 ## 🐛 Troubleshooting
 
@@ -376,6 +398,12 @@ Bot sudah disiapkan untuk integrasi OCR, tapi **belum diimplementasi penuh**.
 1. Cek token bot sudah benar di `.env`
 2. Pastikan bot sudah di-add ke grup
 3. Cek log error di console
+
+### OCR tidak berjalan:
+
+1. Cek `GEMINI_API_KEY` sudah diisi di `.env`
+2. Pastikan API key valid (test di Google AI Studio)
+3. Cek log: `GeminiClient initialized successfully`
 
 ### Database error:
 
@@ -391,11 +419,6 @@ python bot.py
 # Install ulang dependencies
 pip install -r requirements.txt --upgrade
 ```
-
-### Bot crash saat parsing angka:
-
-- Cek format input, harus sesuai yang didukung
-- Lihat log error untuk detail
 
 ## 📊 Contoh Output `/status`
 
@@ -416,22 +439,6 @@ pip install -r requirements.txt --upgrade
 
 ⚠️ SELISIH KECIL
 ```
-
-## 🔄 Migration ke Database Lain
-
-Storage layer sudah modular. Untuk migrate ke Google Sheets:
-
-1. Buat class baru `GoogleSheetsStorage` yang implement method yang sama
-2. Update `config.py` untuk select storage type
-3. Ganti inisialisasi di `bot.py`:
-
-   ```python
-   # Dari:
-   self.storage = Storage(self.config.DB_PATH)
-
-   # Ke:
-   self.storage = GoogleSheetsStorage(self.config.SHEETS_ID)
-   ```
 
 ## 📝 Logging
 
@@ -454,6 +461,7 @@ logging.basicConfig(
 
 - **JANGAN commit** file `.env` ke Git
 - **JANGAN share** bot token ke orang lain
+- **JANGAN share** Gemini API key ke orang lain
 - **Backup** database secara berkala
 - **Batasi** akses bot hanya ke grup internal
 
@@ -472,5 +480,5 @@ Private use untuk internal toko.
 ---
 
 **Dibuat:** Desember 2025
-**Versi:** 1.0.0
-**Status:** Production Ready (OCR belum aktif)
+**Versi:** 2.0.0
+**Status:** Production Ready dengan OCR Gemini AI ✅

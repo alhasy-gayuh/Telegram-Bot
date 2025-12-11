@@ -200,101 +200,25 @@ class Storage:
             return True
         return False
 
-<<<<<<< HEAD
     def update_transaction(self, transaction_id: int, jumlah: float = None, keterangan: str = None) -> bool:
         """
         Update transaksi (jumlah atau keterangan)
         Returns: True jika berhasil
-=======
-    def get_recent_transactions(self, tanggal: str, limit: int = 10) -> List[Tuple]:
-        """
-        Mengambil transaksi terbaru untuk tanggal tertentu
-        Returns: List of tuples dengan ID untuk keperluan edit
->>>>>>> 3507ac5a1d5d14260d74c8b52cddb5a329425722
         """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-<<<<<<< HEAD
         if jumlah is not None:
             cursor.execute('UPDATE transactions SET jumlah = ? WHERE id = ?', (jumlah, transaction_id))
 
         if keterangan is not None:
             cursor.execute('UPDATE transactions SET keterangan = ? WHERE id = ?', (keterangan, transaction_id))
 
-=======
-        cursor.execute('''
-            SELECT id, tanggal, waktu, tipe, jumlah, sumber, keterangan,
-                   chat_id, user_id, message_id, file_id, created_at
-            FROM transactions
-            WHERE tanggal = ?
-            ORDER BY created_at DESC, waktu DESC
-            LIMIT ?
-        ''', (tanggal, limit))
-
-        results = cursor.fetchall()
-        conn.close()
-
-        return results
-
-    def get_transaction_by_id(self, transaction_id: int) -> Optional[Tuple]:
-        """
-        Mengambil detail transaksi berdasarkan ID
-        Returns: tuple atau None
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            SELECT id, tanggal, waktu, tipe, jumlah, sumber, keterangan,
-                   chat_id, user_id, message_id, file_id, created_at
-            FROM transactions
-            WHERE id = ?
-        ''', (transaction_id,))
-
-        result = cursor.fetchone()
-        conn.close()
-
-        return result
-
-    def get_transaction_count_by_type(self, tanggal: str, tipe: str) -> int:
-        """
-        Menghitung jumlah transaksi dengan tipe tertentu pada tanggal tertentu
-        Berguna untuk menampilkan "(3x)" di status
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            SELECT COUNT(*)
-            FROM transactions
-            WHERE tanggal = ? AND tipe = ?
-        ''', (tanggal, tipe))
-
-        result = cursor.fetchone()
-        conn.close()
-
-        return result[0] if result else 0
-
-    def delete_all_transactions_by_date(self, tanggal: str) -> int:
-        """
-        Menghapus SEMUA transaksi pada tanggal tertentu
-        Digunakan untuk fitur /reset
-        Returns: jumlah transaksi yang dihapus
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute('DELETE FROM transactions WHERE tanggal = ?', (tanggal,))
-        affected = cursor.rowcount
-
->>>>>>> 3507ac5a1d5d14260d74c8b52cddb5a329425722
         conn.commit()
         affected = cursor.rowcount
         conn.close()
 
         if affected > 0:
-<<<<<<< HEAD
             logger.info(f"Transaction updated: ID={transaction_id}")
             return True
         return False
@@ -376,8 +300,6 @@ class Storage:
         conn.close()
 
         if affected > 0:
-=======
->>>>>>> 3507ac5a1d5d14260d74c8b52cddb5a329425722
             logger.info(f"All transactions deleted for date: {tanggal}, count: {affected}")
 
         return affected
