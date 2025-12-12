@@ -1,6 +1,6 @@
 """
-Telegram Bot untuk Pencatatan Keuangan Harian Toko
-Entry point utama bot
+Asisten Keuangan Anisa Store v2
+Bot Telegram untuk Pencatatan Keuangan Harian Toko
 """
 
 import logging
@@ -19,7 +19,8 @@ from storage import Storage
 from logic import FinancialLogic
 from utils import parse_amount, format_rupiah
 from ocr_gemini import GeminiClient
-from datetime import datetime
+from scheduler import RekapScheduler
+from datetime import datetime, timedelta
 
 # Setup logging
 logging.basicConfig(
@@ -35,35 +36,25 @@ class TokoBot:
         self.storage = Storage(self.config.DB_PATH)
         self.logic = FinancialLogic(self.storage)
         self.gemini = GeminiClient()
+        self.scheduler = RekapScheduler(self.storage, self.logic)
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler untuk command /start"""
-        welcome_message = """
-🏪 *Bot Pencatatan Keuangan Toko*
+        keyboard = [
+            [InlineKeyboardButton("➕ Input Transaksi", callback_data="menu_input")],
+            [InlineKeyboardButton("📊 Rekap & Laporan", callback_data="menu_rekap")],
+            [InlineKeyboardButton("✏️ Koreksi & Reset", callback_data="menu_koreksi")],
+            [InlineKeyboardButton("❓ Bantuan", callback_data="menu_bantuan")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-📝 Perintah Input:
-• /modal <jumlah> - Catat modal awal
-• /cash <jumlah> - Catat cash akhir di laci
-• /tf <jumlah> - Catat transfer/QRIS
-• /keluar <jumlah> [ket] - Catat pengeluaran
-• /totalpos <jumlah> - Input omzet POS
-
-📊 Perintah Lihat Data:
-• /status - Status keuangan hari ini
-• /lihat - Daftar transaksi hari ini
-• /edit - Edit transaksi yang salah
-• /reset - Reset semua transaksi hari ini
-
-💡 Format angka:
-• 4000, 4k, 4rb, 4.000, 4jt
-• Penjumlahan: 2k + 3k + 5k
-
-⚠️ Tips:
-• Input /modal menandai awal hari baru
-• Semua perhitungan berdasarkan tanggal
-• Gunakan /reset jika ada kesalahan besar
-        """
-        await update.message.reply_text(welcome_message, parse_mode='Markdown')
+        await update.message.reply_text(
+            "🏪 *Asisten Keuangan Anisa Store v2*\n\n"
+            "Selamat datang! Pilih menu di bawah atau ketik /help untuk bantuan.\n\n"
+            "💡 _Tip: Kirim foto bukti transfer untuk OCR otomatis_",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
     async def modal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler untuk /modal <amount>"""
@@ -383,7 +374,20 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
 {summary['status_icon']} {summary['status_text']}
 """
 
-            await update.message.reply_text(message)
+            # Action buttons untuk quick actions
+            keyboard = [
+                [
+                    InlineKeyboardButton("➕ Tambah", callback_data="menu_input"),
+                    InlineKeyboardButton("✏️ Koreksi", callback_data="action_edit")
+                ],
+                [
+                    InlineKeyboardButton("📊 Rekap", callback_data="menu_rekap"),
+                    InlineKeyboardButton("🧹 Reset", callback_data="action_reset_today")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await update.message.reply_text(message, reply_markup=reply_markup)
             logger.info(f"Status requested")
 
         except Exception as e:
@@ -662,18 +666,39 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
             await update.message.reply_text("❌ Gagal memproses gambar")
 
     async def reset_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handler untuk /reset - reset transaksi hari ini"""
+        """Handler untuk /reset [YYYY-MM-DD] - reset transaksi hari ini atau tanggal tertentu"""
         try:
-            tanggal = datetime.now().strftime('%Y-%m-%d')
+            import re
 
-            # Cek apakah ada transaksi hari ini
+            # Check if date argument provided
+            if context.args:
+                date_str = context.args[0]
+                # Validate date format
+                if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+                    await update.message.reply_text(
+                        "❌ Format tanggal salah.\n\n"
+                        "Gunakan format: `/reset YYYY-MM-DD`\n"
+                        "Contoh: `/reset 2025-12-11`",
+                        parse_mode='Markdown'
+                    )
+                    return
+                tanggal = date_str
+                is_today = (tanggal == datetime.now().strftime('%Y-%m-%d'))
+            else:
+                tanggal = datetime.now().strftime('%Y-%m-%d')
+                is_today = True
+
+            # Cek apakah ada transaksi untuk tanggal ini
             transactions = self.storage.get_transactions_by_date(tanggal)
 
             if not transactions:
-                await update.message.reply_text("📭 Belum ada transaksi hari ini untuk direset")
+                if is_today:
+                    await update.message.reply_text("📭 Belum ada transaksi hari ini untuk direset")
+                else:
+                    await update.message.reply_text(f"📭 Tidak ada transaksi tanggal {tanggal}")
                 return
 
-            # Tampilkan konfirmasi
+            # Tampilkan konfirmasi (2-step)
             count = len(transactions)
             keyboard = [
                 [
@@ -683,11 +708,13 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
+            date_label = "hari ini" if is_today else f"tanggal {tanggal}"
             await update.message.reply_text(
                 f"⚠️ *KONFIRMASI RESET*\n\n"
-                f"Anda akan menghapus *SEMUA {count} transaksi* hari ini:\n"
+                f"Anda akan menghapus *{count} transaksi* {date_label}.\n\n"
                 f"📅 {tanggal}\n\n"
-                f"⚠️ Tindakan ini tidak dapat dibatalkan!\n\n"
+                f"⚠️ Tindakan ini tidak dapat dibatalkan!\n"
+                f"💡 Rekap yang sudah tersimpan akan direvisi, bukan dihapus.\n\n"
                 f"Lanjutkan?",
                 reply_markup=reply_markup,
                 parse_mode='Markdown'
@@ -746,12 +773,31 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
         elif data.startswith('confirm_reset_'):
             try:
                 tanggal = data.split('_')[2]
+
+                # Check if there's an existing summary for this date
+                existing_summary = self.storage.get_latest_summary_by_date(tanggal)
+
+                # Delete all transactions
                 deleted_count = self.storage.delete_all_transactions_by_date(tanggal)
+
+                # If there was an existing summary, create a REVISED version
+                # This preserves the history that there was a reset
+                if existing_summary:
+                    # Calculate new summary (should be zeros or whatever is left)
+                    new_summary_data = self.logic.calculate_daily_summary(tanggal)
+                    self.storage.save_daily_summary(
+                        date=tanggal,
+                        state='REVISED',
+                        summary_data=new_summary_data,
+                        notes=f'Reset: {deleted_count} transaksi dihapus'
+                    )
+                    logger.info(f"Created REVISED summary for {tanggal} after reset")
 
                 await query.edit_message_text(
                     f"✅ Reset berhasil!\n\n"
                     f"🗑️ {deleted_count} transaksi telah dihapus\n"
-                    f"📅 {tanggal}\n\n"
+                    f"📅 {tanggal}\n"
+                    f"🔄 Rekap direvisi (tidak dihapus)\n\n"
                     f"💡 Gunakan /modal untuk memulai transaksi baru"
                 )
                 logger.info(f"Manual reset: {tanggal}, deleted: {deleted_count}")
@@ -792,12 +838,547 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
             await query.edit_message_text("❌ Transaksi OCR dibatalkan")
             logger.info("OCR cancelled")
 
+        # ===== MENU HANDLERS (v2) =====
+        elif data == 'menu_input':
+            keyboard = [
+                [
+                    InlineKeyboardButton("💵 Cash", callback_data="input_cash"),
+                    InlineKeyboardButton("💳 Transfer", callback_data="input_tf")
+                ],
+                [
+                    InlineKeyboardButton("📤 Pengeluaran", callback_data="input_keluar"),
+                    InlineKeyboardButton("💰 Modal", callback_data="input_modal")
+                ],
+                [
+                    InlineKeyboardButton("🖥️ Total POS", callback_data="input_pos"),
+                    InlineKeyboardButton("🏠 Menu Utama", callback_data="menu_main")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "➕ *Input Transaksi*\n\nPilih jenis transaksi:",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+
+        elif data == 'menu_rekap':
+            keyboard = [
+                [InlineKeyboardButton("📊 Status Hari Ini", callback_data="rekap_today")],
+                [InlineKeyboardButton("✅ Finalisasi Rekap Hari Ini", callback_data="action_fix_daily")],
+                [InlineKeyboardButton("📅 Rekap Mingguan", callback_data="rekap_weekly")],
+                [InlineKeyboardButton("📆 Rekap Bulanan", callback_data="rekap_monthly")],
+                [InlineKeyboardButton("🏠 Menu Utama", callback_data="menu_main")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "📊 *Rekap & Laporan*\n\nPilih jenis laporan:",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+
+        elif data == 'menu_koreksi':
+            keyboard = [
+                [InlineKeyboardButton("✏️ Edit Transaksi", callback_data="action_edit")],
+                [InlineKeyboardButton("🧹 Reset Hari Ini", callback_data="action_reset_today")],
+                [InlineKeyboardButton("📅 Reset Tanggal Lain", callback_data="action_reset_date")],
+                [InlineKeyboardButton("🏠 Menu Utama", callback_data="menu_main")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "✏️ *Koreksi & Reset*\n\nPilih aksi:",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+
+        elif data == 'menu_bantuan':
+            help_text = """
+❓ *Bantuan Singkat*
+
+• `/modal 500k` - Modal awal
+• `/cash 1jt` - Cash akhir
+• `/tf 200k` - Transfer masuk
+• `/keluar 50k beli bensin` - Pengeluaran
+
+_Ketik /help untuk panduan lengkap._
+"""
+            keyboard = [[InlineKeyboardButton("🏠 Menu Utama", callback_data="menu_main")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(help_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+        elif data == 'menu_main':
+            # Call menu_command logic directly
+            await self.menu_command(update, context)
+
+        elif data == 'menu_close':
+            await query.edit_message_text("✅ Menu ditutup")
+
+        # ===== INPUT VIA BUTTON (STATE MACHINE) =====
+        elif data.startswith('input_'):
+            input_type = data.replace('input_', '')
+            type_names = {
+                'cash': ('Cash Akhir', '/cash'),
+                'tf': ('Transfer/QRIS', '/tf'),
+                'keluar': ('Pengeluaran', '/keluar'),
+                'modal': ('Modal Awal', '/modal'),
+                'pos': ('Total POS', '/totalpos')
+            }
+            name, cmd = type_names.get(input_type, ('Transaksi', ''))
+
+            # Set state for text handler
+            context.user_data['pending_input'] = input_type
+
+            keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="menu_input")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(
+                f"💰 *Input {name}*\n\n"
+                f"Ketik nominal:\n"
+                f"_Contoh: 850k atau 2jt + 500rb_\n\n"
+                f"Atau gunakan command: `{cmd} <jumlah>`",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+
+        # ===== ACTION HANDLERS =====
+        elif data == 'action_fix_daily':
+             tanggal = datetime.now().strftime('%Y-%m-%d')
+
+             # Calculate and save as FINAL
+             summary = self.logic.calculate_daily_summary(tanggal)
+             self.storage.save_daily_summary(
+                 date=tanggal,
+                 state='FINAL',
+                 summary_data=summary,
+                 notes='Manual Finalization via Menu'
+             )
+
+             await query.answer("✅ Rekap harian difinalisasi!")
+             await query.edit_message_text(
+                 f"✅ *Rekap Harian Final*\n"
+                 f"📅 {tanggal}\n\n"
+                 f"Data telah disimpan sebagai FINAL dan akan masuk perhitungan mingguan/bulanan.",
+                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kembali", callback_data="menu_rekap")]])
+             )
+
+        elif data == 'action_edit':
+            keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="menu_koreksi")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "✏️ *Edit Transaksi*\n\n"
+                "Gunakan command:\n"
+                "• `/edit` - lihat daftar transaksi\n"
+                "• `/edit <ID> hapus` - hapus\n"
+                "• `/edit <ID> <nominal>` - ubah nominal",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+
+        elif data == 'action_reset_today':
+            tanggal = datetime.now().strftime('%Y-%m-%d')
+            transactions = self.storage.get_transactions_by_date(tanggal)
+
+            if not transactions:
+                await query.edit_message_text(
+                    "📭 Belum ada transaksi hari ini",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Kembali", callback_data="menu_koreksi")]])
+                )
+                return
+
+            count = len(transactions)
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Ya, Reset", callback_data=f"confirm_reset_{tanggal}"),
+                    InlineKeyboardButton("❌ Batal", callback_data="menu_koreksi")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                f"⚠️ *KONFIRMASI RESET*\n\n"
+                f"Hapus *{count} transaksi* hari ini ({tanggal})?\n\n"
+                f"⚠️ Tindakan ini tidak dapat dibatalkan!",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+
+        elif data == 'action_reset_date':
+            keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="menu_koreksi")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "📅 *Reset Tanggal Lain*\n\n"
+                "Gunakan command:\n"
+                "`/reset YYYY-MM-DD`\n\n"
+                "Contoh: `/reset 2025-12-11`",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+
+        # ===== REKAP HANDLERS =====
+        elif data == 'rekap_today':
+            await query.answer("📊 Menampilkan status...")
+            # Send status as new message
+            tanggal = datetime.now().strftime('%Y-%m-%d')
+            summary = self.logic.calculate_daily_summary(tanggal)
+
+            message = f"""
+📊 *Status Hari Ini*
+📅 {tanggal}
+
+💰 Modal: {format_rupiah(summary['modal'])}
+💵 Cash: {format_rupiah(summary['cash_akhir'])}
+💳 TF: {format_rupiah(summary['total_tf'])} ({summary['count_tf']}x)
+📤 Keluar: {format_rupiah(summary['total_pengeluaran'])} ({summary['count_pengeluaran']}x)
+📈 Omzet: {format_rupiah(summary['omzet_manual'])}
+🖥️ POS: {format_rupiah(summary['pos_total'])}
+📊 Selisih: {format_rupiah(summary['selisih'])}
+
+{summary['status_icon']} {summary['status_text']}
+"""
+            # Add Back button
+            keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="menu_rekap")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+        elif data == 'rekap_weekly':
+            await query.answer("📅 Menghitung rekap mingguan...")
+            # await query.edit_message_text("⏳ Memuat rekap mingguan...")
+            # (removed edit text to avoid flicker if fast)
+
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=6)
+
+            summaries = self.storage.get_summaries_range(
+                start_date.strftime('%Y-%m-%d'),
+                end_date.strftime('%Y-%m-%d')
+            )
+
+            keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="menu_rekap")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            if not summaries:
+                await query.edit_message_text(
+                    "📭 *Rekap Mingguan*\n\n"
+                    "Belum ada data rekap tersimpan.\n"
+                    "Rekap otomatis dibuat jam 23:00 (DRAFT) dan 02:00 (FINAL).",
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+                return
+
+            total_omzet = sum(s[13] for s in summaries)  # omzet_manual index
+            total_tf = sum(s[6] for s in summaries)  # total_tf index
+            total_keluar = sum(s[8] for s in summaries)  # total_pengeluaran index
+
+            message = f"""
+📅 *Rekap Mingguan*
+{start_date.strftime('%d/%m')} - {end_date.strftime('%d/%m/%Y')}
+
+📈 Total Omzet: {format_rupiah(total_omzet)}
+💳 Total TF: {format_rupiah(total_tf)}
+📤 Total Keluar: {format_rupiah(total_keluar)}
+📊 Hari Tercatat: {len(summaries)} hari
+
+_Gunakan /mingguan untuk detail_
+"""
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+        elif data == 'rekap_monthly':
+            await query.answer("📆 Menghitung rekap bulanan...")
+            now = datetime.now()
+            start_date = now.replace(day=1)
+
+            summaries = self.storage.get_summaries_range(
+                start_date.strftime('%Y-%m-%d'),
+                now.strftime('%Y-%m-%d')
+            )
+
+            keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="menu_rekap")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            if not summaries:
+                await query.edit_message_text(
+                    "📭 *Rekap Bulanan*\n\n"
+                    "Belum ada data rekap tersimpan bulan ini.\n"
+                    "Rekap otomatis dibuat jam 23:00 (DRAFT) dan 02:00 (FINAL).",
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+                return
+
+            total_omzet = sum(s[13] for s in summaries)
+            total_tf = sum(s[6] for s in summaries)
+            total_keluar = sum(s[8] for s in summaries)
+
+            message = f"""
+📆 *Rekap Bulanan*
+{start_date.strftime('%B %Y')}
+
+📈 Total Omzet: {format_rupiah(total_omzet)}
+💳 Total TF: {format_rupiah(total_tf)}
+📤 Total Keluar: {format_rupiah(total_keluar)}
+📊 Hari Tercatat: {len(summaries)} hari
+
+_Gunakan /bulanan untuk detail_
+"""
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    # ===== NEW COMMAND HANDLERS (v2) =====
+
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler untuk command /start"""
+        # Redirect to menu_command logic
+        await self.menu_command(update, context)
+
+    async def menu_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler untuk /menu - menampilkan menu utama"""
+        keyboard = [
+            [InlineKeyboardButton("➕ Input Transaksi", callback_data="menu_input")],
+            [InlineKeyboardButton("📊 Rekap & Laporan", callback_data="menu_rekap")],
+            [InlineKeyboardButton("✏️ Koreksi & Reset", callback_data="menu_koreksi")],
+            [InlineKeyboardButton("❓ Bantuan", callback_data="menu_bantuan")],
+            [InlineKeyboardButton("❌ Tutup Menu", callback_data="menu_close")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Bisa dipanggil dari /start, /menu, atau callback "menu_main"
+        msg_text = (
+            "🏪 *Asisten Keuangan Anisa Store v2*\n\n"
+            "Selamat datang! Silakan pilih menu di bawah ini.\n\n"
+            "💡 _Tip: Ketik /help untuk daftar lengkap perintah_"
+        )
+
+        if update.message:
+            await update.message.reply_text(msg_text, reply_markup=reply_markup, parse_mode='Markdown')
+        elif update.callback_query:
+            # Jika dari callback "menu_main"
+            await update.callback_query.edit_message_text(msg_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler untuk /help - menampilkan bantuan teks lengkap"""
+        help_text = """
+❓ *PANDUAN LENGKAP*
+
+*1️⃣ Format Angka*
+• Bebas: `4000`, `4k`, `4rb`, `4.000`, `4jt`
+• Operasi: `2k + 500` (otomatis dihitung)
+
+*2️⃣ Perintah Dasar*
+• `/modal [jumlah]` - Input modal awal
+• `/cash [jumlah]` - Input cash di laci
+• `/tf [jumlah]` - Input transfer/QRIS
+• `/keluar [jumlah] [ket]` - Input pengeluaran
+• `/totalpos [jumlah]` - Input omzet dari program POS
+
+*3️⃣ Laporan & Koreksi*
+• `/status` - Lihat rekap hari ini
+• `/mingguan` - Lihat rekap 7 hari terakhir
+• `/bulanan` - Lihat rekap bulan ini
+• `/lihat` - Daftar transaksi hari ini
+• `/edit` - Hapus/ubah transaksi
+• `/reset` - Hapus semua transaksi hari ini (bisa pilih tanggal)
+
+*4️⃣ Fitur Otomatis*
+• 📸 Kirim foto bukti transfer untuk OCR
+• ⏰ Rekap otomatis jam 23:00 (Draft) & 02:00 (Final)
+• 💾 Data tersimpan aman meski di-reset (versi revisi)
+
+_Gunakan tombol di bawah untuk navigasi cepat_
+"""
+        keyboard = [[InlineKeyboardButton("🏠 Menu Utama", callback_data="menu_main")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(help_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def mingguan_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler untuk /mingguan - rekap 7 hari terakhir"""
+        try:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=6)
+
+            summaries = self.storage.get_summaries_range(
+                start_date.strftime('%Y-%m-%d'),
+                end_date.strftime('%Y-%m-%d')
+            )
+
+            if not summaries:
+                await update.message.reply_text(
+                    "📭 *Rekap Mingguan*\n\n"
+                    "Belum ada data rekap tersimpan dalam 7 hari terakhir.\n\n"
+                    "💡 Rekap otomatis dibuat:\n"
+                    "• Jam 23:00 → DRAFT\n"
+                    "• Jam 02:00 → FINAL",
+                    parse_mode='Markdown'
+                )
+                return
+
+            # Calculate totals
+            total_omzet = sum(s[13] for s in summaries)  # omzet_manual
+            total_tf = sum(s[6] for s in summaries)      # total_tf
+            total_keluar = sum(s[8] for s in summaries)  # total_pengeluaran
+            total_pos = sum(s[10] for s in summaries)    # pos_total
+
+            message = f"""
+📅 *REKAP MINGGUAN*
+{start_date.strftime('%d %b')} - {end_date.strftime('%d %b %Y')}
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+📊 RINGKASAN
+━━━━━━━━━━━━━━━━━━━━━━━━
+📈 Total Omzet Manual: {format_rupiah(total_omzet)}
+🖥️ Total Omzet POS: {format_rupiah(total_pos)}
+💳 Total Transfer: {format_rupiah(total_tf)}
+📤 Total Pengeluaran: {format_rupiah(total_keluar)}
+📊 Rata-rata/hari: {format_rupiah(total_omzet // len(summaries) if summaries else 0)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+📋 DETAIL PER HARI
+━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+            for s in summaries:
+                date = s[1]
+                state = s[3]
+                omzet = s[13]
+                status_icon = s[17]
+                version = s[2]
+
+                state_label = {'DRAFT': '📝', 'FINAL': '✅', 'REVISED': '🔄'}.get(state, '❓')
+                v_label = f"v{version}" if version > 1 else ""
+
+                message += f"{date}: {format_rupiah(omzet)} {status_icon} {state_label}{v_label}\n"
+
+            message += f"\n📊 Data: {len(summaries)} hari tercatat"
+
+            await update.message.reply_text(message, parse_mode='Markdown')
+
+        except Exception as e:
+            logger.error(f"Error in mingguan_command: {e}")
+            await update.message.reply_text("❌ Terjadi kesalahan")
+
+    async def bulanan_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler untuk /bulanan - rekap bulan ini"""
+        try:
+            now = datetime.now()
+            start_date = now.replace(day=1)
+
+            summaries = self.storage.get_summaries_range(
+                start_date.strftime('%Y-%m-%d'),
+                now.strftime('%Y-%m-%d')
+            )
+
+            if not summaries:
+                await update.message.reply_text(
+                    f"📭 *Rekap Bulanan - {now.strftime('%B %Y')}*\n\n"
+                    "Belum ada data rekap tersimpan bulan ini.\n\n"
+                    "💡 Rekap otomatis dibuat:\n"
+                    "• Jam 23:00 → DRAFT\n"
+                    "• Jam 02:00 → FINAL",
+                    parse_mode='Markdown'
+                )
+                return
+
+            # Calculate totals
+            total_omzet = sum(s[13] for s in summaries)
+            total_tf = sum(s[6] for s in summaries)
+            total_keluar = sum(s[8] for s in summaries)
+            total_pos = sum(s[10] for s in summaries)
+
+            message = f"""
+📆 *REKAP BULANAN*
+{now.strftime('%B %Y')}
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+📊 RINGKASAN
+━━━━━━━━━━━━━━━━━━━━━━━━
+📈 Total Omzet Manual: {format_rupiah(total_omzet)}
+🖥️ Total Omzet POS: {format_rupiah(total_pos)}
+💳 Total Transfer: {format_rupiah(total_tf)}
+📤 Total Pengeluaran: {format_rupiah(total_keluar)}
+📊 Rata-rata/hari: {format_rupiah(total_omzet // len(summaries) if summaries else 0)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+📋 DATA
+━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Hari Tercatat: {len(summaries)} hari
+📅 Periode: {start_date.strftime('%d %b')} - {now.strftime('%d %b %Y')}
+"""
+
+            await update.message.reply_text(message, parse_mode='Markdown')
+
+        except Exception as e:
+            logger.error(f"Error in bulanan_command: {e}")
+            await update.message.reply_text("❌ Terjadi kesalahan")
+
+    async def text_input_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler untuk text input dari button flow (state machine)"""
+        # Check if there's a pending input from button flow
+        pending_input = context.user_data.get('pending_input')
+
+        if not pending_input:
+            return  # No pending input, let it pass to other handlers
+
+        try:
+            text = update.message.text.strip()
+            amount = parse_amount(text)
+
+            if amount <= 0:
+                await update.message.reply_text("❌ Jumlah harus > 0")
+                return
+
+            tanggal = datetime.now().strftime('%Y-%m-%d')
+            waktu = datetime.now().strftime('%H:%M:%S')
+
+            # Map input type to transaction type
+            type_map = {
+                'cash': 'cash',
+                'tf': 'tf',
+                'keluar': 'keluar',
+                'modal': 'modal',
+                'pos': 'pos'
+            }
+            tipe = type_map.get(pending_input, pending_input)
+
+            # Save transaction
+            self.storage.add_transaction(
+                tanggal=tanggal,
+                waktu=waktu,
+                tipe=tipe,
+                jumlah=amount,
+                sumber='button',
+                keterangan='',
+                chat_id=update.effective_chat.id,
+                user_id=update.effective_user.id,
+                message_id=update.message.message_id
+            )
+
+            # Clear pending state
+            context.user_data.pop('pending_input', None)
+
+            type_names = {
+                'cash': 'Cash akhir',
+                'tf': 'Transfer/QRIS',
+                'keluar': 'Pengeluaran',
+                'modal': 'Modal awal',
+                'pos': 'Total POS'
+            }
+            name = type_names.get(tipe, 'Transaksi')
+
+            await update.message.reply_text(f"✅ {name} {format_rupiah(amount)} tersimpan")
+            logger.info(f"{tipe} via button: {amount}")
+
+        except ValueError as e:
+            await update.message.reply_text(f"❌ Format tidak valid: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error in text_input_handler: {e}")
+            await update.message.reply_text("❌ Terjadi kesalahan")
+            context.user_data.pop('pending_input', None)
+
     def run(self):
         """Jalankan bot"""
         application = Application.builder().token(self.config.TELEGRAM_BOT_TOKEN).build()
 
         # Register handlers
         application.add_handler(CommandHandler("start", self.start))
+        application.add_handler(CommandHandler("menu", self.menu_command))
+        application.add_handler(CommandHandler("help", self.help_command))
         application.add_handler(CommandHandler("modal", self.modal_command))
         application.add_handler(CommandHandler("cash", self.cash_command))
         application.add_handler(CommandHandler("tf", self.tf_command))
@@ -807,11 +1388,22 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
         application.add_handler(CommandHandler("lihat", self.lihat_command))
         application.add_handler(CommandHandler("edit", self.edit_command))
         application.add_handler(CommandHandler("reset", self.reset_command))
+        application.add_handler(CommandHandler("mingguan", self.mingguan_command))
+        application.add_handler(CommandHandler("bulanan", self.bulanan_command))
 
         application.add_handler(MessageHandler(filters.PHOTO, self.photo_handler))
+        # Text handler for button flow (must be after command handlers)
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.text_input_handler))
         application.add_handler(CallbackQueryHandler(self.callback_query_handler))
 
-        logger.info("Bot started...")
+        # Start scheduler after event loop is running (via post_init)
+        async def start_scheduler(app):
+            self.scheduler.start()
+            logger.info("Scheduler started: DRAFT at 23:00, FINAL at 02:00")
+
+        application.post_init = start_scheduler
+
+        logger.info("Asisten Keuangan Anisa Store v2 starting...")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
