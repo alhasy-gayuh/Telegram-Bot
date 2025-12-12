@@ -3,6 +3,7 @@ python-dotenv==1.0.0
 requests==2.31.0
 google-generativeai>=0.3.2
 pillow
+APScheduler>=3.10.0
 
 # Optional: untuk OCR callback endpoint (jika menggunakan FastAPI)
 # fastapi==0.108.0
