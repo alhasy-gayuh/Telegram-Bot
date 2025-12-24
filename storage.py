@@ -35,6 +35,7 @@ class Storage:
                 keterangan TEXT,
                 chat_id INTEGER,
                 user_id INTEGER,
+                username TEXT,
                 message_id INTEGER,
                 file_id TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -89,6 +90,40 @@ class Storage:
             ON daily_summaries(date)
         ''')
 
+        # Tabel untuk audit log (v3) - Riwayat perubahan
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                action TEXT NOT NULL CHECK(action IN ('ADD', 'EDIT', 'DELETE')),
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER NOT NULL,
+                entity_date TEXT,
+                username TEXT NOT NULL,
+                field_changed TEXT,
+                old_value TEXT,
+                new_value TEXT,
+                notes TEXT
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_audit_log_date
+            ON audit_log(entity_date)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_audit_log_entity
+            ON audit_log(entity_type, entity_id)
+        ''')
+
+        # Migration: tambah kolom username jika belum ada
+        try:
+            cursor.execute('ALTER TABLE transactions ADD COLUMN username TEXT')
+            logger.info("Migration: Added username column to transactions")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
         conn.commit()
         conn.close()
         logger.info(f"Database initialized at {self.db_path}")
@@ -103,6 +138,7 @@ class Storage:
         keterangan: str = '',
         chat_id: int = 0,
         user_id: int = 0,
+        username: str = '',
         message_id: int = 0,
         file_id: str = None
     ) -> int:
@@ -116,16 +152,25 @@ class Storage:
         cursor.execute('''
             INSERT INTO transactions
             (tanggal, waktu, tipe, jumlah, sumber, keterangan,
-             chat_id, user_id, message_id, file_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             chat_id, user_id, username, message_id, file_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (tanggal, waktu, tipe, jumlah, sumber, keterangan,
-              chat_id, user_id, message_id, file_id))
+              chat_id, user_id, username, message_id, file_id))
 
         transaction_id = cursor.lastrowid
+
+        # Log ke audit_log
+        cursor.execute('''
+            INSERT INTO audit_log
+            (action, entity_type, entity_id, entity_date, username, field_changed, new_value, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', ('ADD', 'transaction', transaction_id, tanggal, username or f'user_{user_id}',
+              tipe, str(jumlah), keterangan or None))
+
         conn.commit()
         conn.close()
 
-        logger.info(f"Transaction added: ID={transaction_id}, tipe={tipe}, jumlah={jumlah}")
+        logger.info(f"Transaction added: ID={transaction_id}, tipe={tipe}, jumlah={jumlah}, by={username}")
         return transaction_id
 
     def get_transactions_by_date(self, tanggal: str) -> List[Tuple]:
@@ -218,7 +263,7 @@ class Storage:
 
         return results
 
-    def delete_transaction(self, transaction_id: int) -> bool:
+    def delete_transaction(self, transaction_id: int, username: str = '') -> bool:
         """
         Menghapus transaksi berdasarkan ID
         Returns: True jika berhasil, False jika tidak ditemukan
@@ -226,18 +271,39 @@ class Storage:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
+        # Ambil data transaksi sebelum dihapus untuk audit log
+        cursor.execute('''
+            SELECT tanggal, tipe, jumlah, keterangan, user_id FROM transactions WHERE id = ?
+        ''', (transaction_id,))
+        old_data = cursor.fetchone()
+
+        if not old_data:
+            conn.close()
+            return False
+
+        tanggal, tipe, jumlah, keterangan, user_id = old_data
+
         cursor.execute('DELETE FROM transactions WHERE id = ?', (transaction_id,))
         affected = cursor.rowcount
+
+        if affected > 0:
+            # Log ke audit_log
+            cursor.execute('''
+                INSERT INTO audit_log
+                (action, entity_type, entity_id, entity_date, username, field_changed, old_value, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', ('DELETE', 'transaction', transaction_id, tanggal,
+                  username or f'user_{user_id}', tipe, str(jumlah), keterangan))
 
         conn.commit()
         conn.close()
 
         if affected > 0:
-            logger.info(f"Transaction deleted: ID={transaction_id}")
+            logger.info(f"Transaction deleted: ID={transaction_id}, by={username}")
             return True
         return False
 
-    def update_transaction(self, transaction_id: int, jumlah: float = None, keterangan: str = None) -> bool:
+    def update_transaction(self, transaction_id: int, username: str = '', jumlah: float = None, keterangan: str = None) -> bool:
         """
         Update transaksi (jumlah atau keterangan)
         Returns: True jika berhasil
@@ -245,18 +311,45 @@ class Storage:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
+        # Ambil data lama untuk audit log
+        cursor.execute('''
+            SELECT tanggal, tipe, jumlah, keterangan, user_id FROM transactions WHERE id = ?
+        ''', (transaction_id,))
+        old_data = cursor.fetchone()
+
+        if not old_data:
+            conn.close()
+            return False
+
+        tanggal, tipe, old_jumlah, old_ket, user_id = old_data
+        effective_username = username or f'user_{user_id}'
+
         if jumlah is not None:
             cursor.execute('UPDATE transactions SET jumlah = ? WHERE id = ?', (jumlah, transaction_id))
+            # Log perubahan jumlah
+            cursor.execute('''
+                INSERT INTO audit_log
+                (action, entity_type, entity_id, entity_date, username, field_changed, old_value, new_value, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', ('EDIT', 'transaction', transaction_id, tanggal, effective_username,
+                  'jumlah', str(old_jumlah), str(jumlah), f'{tipe}: {old_jumlah} → {jumlah}'))
 
         if keterangan is not None:
             cursor.execute('UPDATE transactions SET keterangan = ? WHERE id = ?', (keterangan, transaction_id))
+            # Log perubahan keterangan
+            cursor.execute('''
+                INSERT INTO audit_log
+                (action, entity_type, entity_id, entity_date, username, field_changed, old_value, new_value, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', ('EDIT', 'transaction', transaction_id, tanggal, effective_username,
+                  'keterangan', old_ket or '', keterangan, f'{tipe}: ket diubah'))
 
         conn.commit()
         affected = cursor.rowcount
         conn.close()
 
         if affected > 0:
-            logger.info(f"Transaction updated: ID={transaction_id}")
+            logger.info(f"Transaction updated: ID={transaction_id}, by={username}")
             return True
         return False
 
@@ -519,6 +612,56 @@ class Storage:
         ''', (start_date, end_date))
 
         results = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        return results
+
+    # ===== AUDIT LOG METHODS (v3) =====
+
+    def get_audit_log_by_date(self, date: str) -> List[Tuple]:
+        """
+        Ambil riwayat perubahan untuk tanggal tertentu.
+        Untuk fitur /riwayat.
+
+        Returns: List of tuples (id, timestamp, action, entity_type, entity_id,
+                                 entity_date, username, field_changed,
+                                 old_value, new_value, notes)
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT id, timestamp, action, entity_type, entity_id,
+                   entity_date, username, field_changed, old_value, new_value, notes
+            FROM audit_log
+            WHERE entity_date = ?
+            ORDER BY timestamp DESC
+        ''', (date,))
+
+        results = cursor.fetchall()
+        conn.close()
+
+        return results
+
+    def get_recent_audit_logs(self, limit: int = 20) -> List[Tuple]:
+        """
+        Ambil riwayat perubahan terbaru.
+        Untuk debugging atau overview.
+
+        Returns: List of audit log entries
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT id, timestamp, action, entity_type, entity_id,
+                   entity_date, username, field_changed, old_value, new_value, notes
+            FROM audit_log
+            ORDER BY timestamp DESC
+            LIMIT ?
+        ''', (limit,))
+
+        results = cursor.fetchall()
         conn.close()
 
         return results

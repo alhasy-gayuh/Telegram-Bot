@@ -38,6 +38,15 @@ class TokoBot:
         self.gemini = GeminiClient()
         self.scheduler = RekapScheduler(self.storage, self.logic)
 
+    def _get_username(self, user) -> str:
+        """Get username from Telegram user object for audit logging."""
+        if user.username:
+            return f"@{user.username}"
+        elif user.first_name:
+            return user.first_name
+        else:
+            return f"user_{user.id}"
+
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler untuk command /start"""
         keyboard = [
@@ -112,6 +121,7 @@ class TokoBot:
                 keterangan='',
                 chat_id=update.effective_chat.id,
                 user_id=update.effective_user.id,
+                username=self._get_username(update.effective_user),
                 message_id=update.message.message_id
             )
 
@@ -156,6 +166,7 @@ class TokoBot:
                 keterangan='',
                 chat_id=update.effective_chat.id,
                 user_id=update.effective_user.id,
+                username=self._get_username(update.effective_user),
                 message_id=update.message.message_id
             )
 
@@ -197,6 +208,7 @@ class TokoBot:
                 keterangan='',
                 chat_id=update.effective_chat.id,
                 user_id=update.effective_user.id,
+                username=self._get_username(update.effective_user),
                 message_id=update.message.message_id
             )
 
@@ -261,6 +273,7 @@ class TokoBot:
                 keterangan=keterangan,
                 chat_id=update.effective_chat.id,
                 user_id=update.effective_user.id,
+                username=self._get_username(update.effective_user),
                 message_id=update.message.message_id
             )
 
@@ -311,6 +324,7 @@ class TokoBot:
                 keterangan='',
                 chat_id=update.effective_chat.id,
                 user_id=update.effective_user.id,
+                username=self._get_username(update.effective_user),
                 message_id=update.message.message_id
             )
 
@@ -552,9 +566,10 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
 
             # Action: hapus
             if context.args[1].lower() == 'hapus':
-                self.storage.delete_transaction(tx_id)
+                username = self._get_username(update.effective_user)
+                self.storage.delete_transaction(tx_id, username=username)
                 await update.message.reply_text(f"✅ Transaksi ID {tx_id} berhasil dihapus")
-                logger.info(f"Transaction deleted: ID={tx_id}")
+                logger.info(f"Transaction deleted: ID={tx_id} by {username}")
                 return
 
             # Action: ubah keterangan
@@ -563,9 +578,10 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
                     await update.message.reply_text("❌ Format: /edit <ID> ket <keterangan_baru>")
                     return
                 new_ket = ' '.join(context.args[2:])
-                self.storage.update_transaction(tx_id, keterangan=new_ket)
+                username = self._get_username(update.effective_user)
+                self.storage.update_transaction(tx_id, username=username, keterangan=new_ket)
                 await update.message.reply_text(f"✅ Keterangan transaksi ID {tx_id} diubah menjadi:\n💬 {new_ket}")
-                logger.info(f"Transaction updated: ID={tx_id}, new_ket={new_ket}")
+                logger.info(f"Transaction updated: ID={tx_id}, new_ket={new_ket} by {username}")
                 return
 
             # Action: ubah jumlah
@@ -580,9 +596,10 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
                 await update.message.reply_text("❌ Jumlah tidak boleh negatif")
                 return
 
-            self.storage.update_transaction(tx_id, jumlah=new_amount)
+            username = self._get_username(update.effective_user)
+            self.storage.update_transaction(tx_id, username=username, jumlah=new_amount)
             await update.message.reply_text(f"✅ Jumlah transaksi ID {tx_id} diubah menjadi:\n💵 {format_rupiah(new_amount)}")
-            logger.info(f"Transaction updated: ID={tx_id}, new_amount={new_amount}")
+            logger.info(f"Transaction updated: ID={tx_id}, new_amount={new_amount} by {username}")
 
         except ValueError:
             await update.message.reply_text("❌ ID harus berupa angka\nContoh: /edit 123")
@@ -634,6 +651,7 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
                     keterangan=f"OCR: {reason}",
                     chat_id=update.effective_chat.id,
                     user_id=update.effective_user.id,
+                    username=self._get_username(update.effective_user),
                     message_id=update.message.message_id,
                     file_id=file_id
                 )
@@ -751,6 +769,7 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
                     keterangan='',
                     chat_id=update.effective_chat.id,
                     user_id=query.from_user.id,
+                    username=self._get_username(query.from_user),
                     message_id=query.message.message_id
                 )
 
@@ -828,6 +847,7 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
                     keterangan='Via OCR',
                     chat_id=update.effective_chat.id,
                     user_id=query.from_user.id,
+                    username=self._get_username(query.from_user),
                     message_id=original_msg_id
                 )
 
@@ -878,14 +898,17 @@ Manual - POS     : {format_rupiah(summary['selisih'])} ({summary['selisih_persen
 
         elif data == 'menu_koreksi':
             keyboard = [
-                [InlineKeyboardButton("✏️ Edit Transaksi", callback_data="action_edit")],
+                [InlineKeyboardButton("✏️ Edit Transaksi Hari Ini", callback_data="action_edit")],
+                [InlineKeyboardButton("📅 Edit Rekap Tanggal Lalu", callback_data="action_editrekap")],
+                [InlineKeyboardButton("📜 Riwayat Perubahan", callback_data="action_riwayat")],
                 [InlineKeyboardButton("🧹 Reset Hari Ini", callback_data="action_reset_today")],
                 [InlineKeyboardButton("📅 Reset Tanggal Lain", callback_data="action_reset_date")],
                 [InlineKeyboardButton("🏠 Menu Utama", callback_data="menu_main")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(
-                "✏️ *Koreksi & Reset*\n\nPilih aksi:",
+                "✏️ *Koreksi & Reset*\n\n"
+                "Pilih aksi yang ingin dilakukan:",
                 reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
@@ -1012,6 +1035,282 @@ _Ketik /help untuk panduan lengkap._
                 parse_mode='Markdown'
             )
 
+        elif data == 'action_editrekap':
+            # Menu utama edit rekap dengan pilihan mingguan/bulanan
+            keyboard = [
+                [InlineKeyboardButton("📅 Lihat 1 Minggu Terakhir", callback_data="editrekap_week")],
+                [InlineKeyboardButton("📆 Lihat 1 Bulan Terakhir", callback_data="editrekap_month")],
+                [InlineKeyboardButton("🔙 Kembali", callback_data="menu_koreksi")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "📅 *Edit Rekap Tanggal Lalu*\n\n"
+                "Pilih periode untuk melihat selisih per hari:\n"
+                "_Atau gunakan `/editrekap YYYY-MM-DD`_",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+
+        elif data == 'editrekap_week':
+            # Tampilkan 7 hari terakhir dengan selisih
+            end_date = datetime.now() - timedelta(days=1)
+            start_date = end_date - timedelta(days=6)
+
+            summaries = self.storage.get_summaries_range(
+                start_date.strftime('%Y-%m-%d'),
+                end_date.strftime('%Y-%m-%d')
+            )
+
+            # Create dict for easy lookup
+            summary_dict = {s[1]: s for s in summaries}
+
+            message = "📅 *SELISIH MINGGU INI*\n"
+            message += f"{start_date.strftime('%d/%m')} - {end_date.strftime('%d/%m/%Y')}\n\n"
+
+            keyboard = []
+            total_selisih = 0
+
+            for i in range(7):
+                d = end_date - timedelta(days=6-i)
+                date_str = d.strftime('%Y-%m-%d')
+                label = d.strftime('%d %b')
+
+                if date_str in summary_dict:
+                    s = summary_dict[date_str]
+                    selisih = s[14]
+                    total_selisih += selisih
+                    status = s[17]
+
+                    if selisih > 5000:
+                        icon = "🔴"
+                    elif selisih < -5000:
+                        icon = "🔴"
+                    elif abs(selisih) > 1000:
+                        icon = "🟡"
+                    else:
+                        icon = "🟢"
+
+                    selisih_str = f"+{format_rupiah(selisih)}" if selisih >= 0 else format_rupiah(selisih)
+                    message += f"{icon} {label}: {selisih_str} {status}\n"
+                    keyboard.append([InlineKeyboardButton(f"{icon} {label}: {selisih_str}", callback_data=f"editrekap_{date_str}")])
+                else:
+                    message += f"⚪ {label}: _belum ada data_\n"
+                    keyboard.append([InlineKeyboardButton(f"⚪ {label}: No data", callback_data=f"editrekap_{date_str}")])
+
+            total_str = f"+{format_rupiah(total_selisih)}" if total_selisih >= 0 else format_rupiah(total_selisih)
+            message += f"\n━━━━━━━━━━━━━━\n📊 *Total Selisih: {total_str}*"
+
+            keyboard.append([InlineKeyboardButton("🔙 Kembali", callback_data="action_editrekap")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+        elif data == 'editrekap_month':
+            # Tampilkan 30 hari terakhir dengan selisih
+            end_date = datetime.now() - timedelta(days=1)
+            start_date = end_date - timedelta(days=29)
+
+            summaries = self.storage.get_summaries_range(
+                start_date.strftime('%Y-%m-%d'),
+                end_date.strftime('%Y-%m-%d')
+            )
+
+            summary_dict = {s[1]: s for s in summaries}
+
+            message = "📆 *SELISIH BULAN INI*\n"
+            message += f"{start_date.strftime('%d/%m')} - {end_date.strftime('%d/%m/%Y')}\n\n"
+
+            # Group by status
+            big_plus = []  # > 5k
+            big_minus = []  # < -5k
+            small = []  # -5k to 5k
+            total_selisih = 0
+
+            for i in range(30):
+                d = end_date - timedelta(days=29-i)
+                date_str = d.strftime('%Y-%m-%d')
+
+                if date_str in summary_dict:
+                    s = summary_dict[date_str]
+                    selisih = s[14]
+                    total_selisih += selisih
+                    status = s[17]
+
+                    if selisih > 5000:
+                        big_plus.append((date_str, selisih, status))
+                    elif selisih < -5000:
+                        big_minus.append((date_str, selisih, status))
+                    else:
+                        small.append((date_str, selisih, status))
+
+            # Show problematic days first
+            keyboard = []
+
+            if big_plus or big_minus:
+                message += "🚨 *Selisih Besar (perlu dicek):*\n"
+                for date_str, selisih, status in (big_plus + big_minus)[:10]:
+                    d = datetime.strptime(date_str, '%Y-%m-%d')
+                    label = d.strftime('%d %b')
+                    selisih_str = f"+{format_rupiah(selisih)}" if selisih >= 0 else format_rupiah(selisih)
+                    message += f"🔴 {label}: {selisih_str} {status}\n"
+                    keyboard.append([InlineKeyboardButton(f"🔴 {label}: {selisih_str}", callback_data=f"editrekap_{date_str}")])
+
+            if small:
+                message += f"\n✅ Hari dengan selisih kecil: {len(small)} hari\n"
+
+            message += f"\n━━━━━━━━━━━━━━\n"
+            total_str = f"+{format_rupiah(total_selisih)}" if total_selisih >= 0 else format_rupiah(total_selisih)
+            message += f"📊 *Total Selisih (30 hari): {total_str}*\n"
+            message += f"📅 Data tersedia: {len(summaries)} hari"
+
+            keyboard.append([InlineKeyboardButton("📅 Lihat Semua (Mingguan)", callback_data="editrekap_week")])
+            keyboard.append([InlineKeyboardButton("🔙 Kembali", callback_data="action_editrekap")])
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+        elif data.startswith('editrekap_'):
+            date_str = data.replace('editrekap_', '')
+            transactions = self.storage.get_transactions_by_date(date_str)
+
+            message = f"📝 *Edit Rekap*\n📅 {date_str}\n\n"
+            tipe_emoji = {'modal': '💰', 'cash': '💵', 'tf': '💳', 'keluar': '📤', 'pos': '🖥️'}
+
+            if not transactions:
+                message += "📭 _Belum ada transaksi_\n\n"
+            else:
+                for i, tx in enumerate(transactions[:10], 1):
+                    tx_id, _, waktu, tipe, jumlah, _, ket = tx[:7]
+                    emoji = tipe_emoji.get(tipe, '📝')
+                    line = f"{i}. {emoji} {tipe.upper()}: {format_rupiah(jumlah)}\n   🔑 ID: `{tx_id}`\n"
+                    message += line
+
+            message += f"\n*Aksi:*\n"
+            message += f"➕ `/editrekap {date_str} tambah pos 1.5jt`\n"
+            message += f"🗑️ `/editrekap {date_str} hapus ID`\n"
+            message += f"✏️ `/editrekap {date_str} ID JUMLAH`"
+
+            keyboard = [
+                [InlineKeyboardButton("➕ Tambah POS", callback_data=f"addtx_{date_str}_pos")],
+                [
+                    InlineKeyboardButton("💳 TF", callback_data=f"addtx_{date_str}_tf"),
+                    InlineKeyboardButton("📤 Keluar", callback_data=f"addtx_{date_str}_keluar")
+                ],
+                [InlineKeyboardButton("🔙 Kembali", callback_data="action_editrekap")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+        elif data.startswith('addtx_'):
+            # Format: addtx_YYYY-MM-DD_tipe
+            parts = data.split('_')
+            if len(parts) >= 3:
+                date_str = parts[1]
+                tipe = parts[2]
+
+                # Set state untuk input jumlah
+                context.user_data['pending_addtx'] = {
+                    'date': date_str,
+                    'tipe': tipe
+                }
+
+                tipe_names = {'modal': 'Modal', 'cash': 'Cash', 'tf': 'Transfer', 'keluar': 'Pengeluaran', 'pos': 'Total POS'}
+                keyboard = [[InlineKeyboardButton("❌ Batal", callback_data=f"editrekap_{date_str}")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text(
+                    f"➕ *Tambah {tipe_names.get(tipe, tipe)}*\n"
+                    f"📅 Tanggal: {date_str}\n\n"
+                    f"Ketik jumlah yang ingin ditambahkan:\n"
+                    f"Contoh: `1.5jt`, `300k`, `500000`",
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+
+        elif data == 'action_riwayat':
+            date_str = datetime.now().strftime('%Y-%m-%d')
+            logs = self.storage.get_audit_log_by_date(date_str)
+
+            if not logs:
+                message = f"📜 *Riwayat Perubahan*\n📅 {date_str}\n\nBelum ada log perubahan hari ini."
+            else:
+                message = f"📜 *Riwayat Perubahan*\n📅 {date_str}\n\n"
+                action_emoji = {'ADD': '➕', 'EDIT': '✏️', 'DELETE': '🗑️'}
+
+                for log in logs[:10]:
+                    _, timestamp, action, _, entity_id, _, username, field, old_val, new_val, notes = log
+                    try:
+                        ts = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                        time_str = ts.strftime('%H:%M')
+                    except:
+                        time_str = '??:??'
+
+                    emoji = action_emoji.get(action, '📝')
+                    message += f"{emoji} [{time_str}] {action} oleh {username}\n"
+                    if notes:
+                        message += f"   💬 {notes}\n"
+
+                if len(logs) > 10:
+                    message += f"\n_...dan {len(logs) - 10} log lainnya_"
+                message += f"\n\n📊 Total: {len(logs)} perubahan"
+
+            # Tombol untuk lihat tanggal lain
+            keyboard = [
+                [InlineKeyboardButton("📅 Lihat Tanggal Lain", callback_data="riwayat_select_date")],
+                [InlineKeyboardButton("🔙 Kembali", callback_data="menu_koreksi")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+        elif data == 'riwayat_select_date':
+            keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="action_riwayat")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "📜 *Riwayat Tanggal Lain*\n\n"
+                "Gunakan command:\n"
+                "`/riwayat YYYY-MM-DD`\n\n"
+                "Contoh: `/riwayat 2025-12-20`",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+
+        elif data == 'rekap_weekly_detail':
+            # Redirect ke command /mingguan dengan mengirim pesan baru
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=6)
+
+            summaries = self.storage.get_summaries_range(
+                start_date.strftime('%Y-%m-%d'),
+                end_date.strftime('%Y-%m-%d')
+            )
+
+            if not summaries:
+                keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="rekap_weekly")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text(
+                    "📭 Tidak ada data detail",
+                    reply_markup=reply_markup
+                )
+                return
+
+            total_omzet = sum(s[13] for s in summaries)
+            total_selisih = sum(s[14] for s in summaries)
+            selisih_str = f"+{format_rupiah(total_selisih)}" if total_selisih >= 0 else format_rupiah(total_selisih)
+
+            message = f"📅 *Detail Mingguan*\n{start_date.strftime('%d/%m')} - {end_date.strftime('%d/%m/%Y')}\n\n"
+
+            for s in summaries:
+                date = s[1]
+                omzet = s[13]
+                selisih = s[14]
+                status_icon = s[17]
+
+                selisih_sign = f"+{format_rupiah(selisih)}" if selisih >= 0 else format_rupiah(selisih)
+                message += f"📅 {date}\n   💰 {format_rupiah(omzet)} | {selisih_sign} {status_icon}\n"
+
+            message += f"\n━━━━━━━━━━━━━━━━━━━━\n📊 Total Selisih: {selisih_str}"
+
+            keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="rekap_weekly")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
         # ===== REKAP HANDLERS =====
         elif data == 'rekap_today':
             await query.answer("📊 Menampilkan status...")
@@ -1067,18 +1366,34 @@ _Ketik /help untuk panduan lengkap._
             total_omzet = sum(s[13] for s in summaries)  # omzet_manual index
             total_tf = sum(s[6] for s in summaries)  # total_tf index
             total_keluar = sum(s[8] for s in summaries)  # total_pengeluaran index
+            total_pos = sum(s[10] for s in summaries)  # pos_total
+            total_selisih = sum(s[14] for s in summaries)  # selisih
+            days_plus = sum(1 for s in summaries if s[14] > 0)
+            days_minus = sum(1 for s in summaries if s[14] < 0)
+
+            selisih_str = f"+{format_rupiah(total_selisih)}" if total_selisih >= 0 else format_rupiah(total_selisih)
+            selisih_icon = "📈" if total_selisih >= 0 else "📉"
 
             message = f"""
 📅 *Rekap Mingguan*
 {start_date.strftime('%d/%m')} - {end_date.strftime('%d/%m/%Y')}
 
+━━━━━━━━━━━━━━━━━━━━
 📈 Total Omzet: {format_rupiah(total_omzet)}
-💳 Total TF: {format_rupiah(total_tf)}
-📤 Total Keluar: {format_rupiah(total_keluar)}
-📊 Hari Tercatat: {len(summaries)} hari
+🖥️ Total POS: {format_rupiah(total_pos)}
+{selisih_icon} Total Selisih: {selisih_str}
 
-_Gunakan /mingguan untuk detail_
+📈 Hari Plus: {days_plus} | 📉 Minus: {days_minus}
+📊 Tercatat: {len(summaries)} hari
+━━━━━━━━━━━━━━━━━━━━
+
+_Ketuk /mingguan untuk detail per hari_
 """
+            keyboard = [
+                [InlineKeyboardButton("📝 Lihat Detail", callback_data="rekap_weekly_detail")],
+                [InlineKeyboardButton("🔙 Kembali", callback_data="menu_rekap")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
         elif data == 'rekap_monthly':
@@ -1107,18 +1422,31 @@ _Gunakan /mingguan untuk detail_
             total_omzet = sum(s[13] for s in summaries)
             total_tf = sum(s[6] for s in summaries)
             total_keluar = sum(s[8] for s in summaries)
+            total_pos = sum(s[10] for s in summaries)
+            total_selisih = sum(s[14] for s in summaries)
+            days_plus = sum(1 for s in summaries if s[14] > 0)
+            days_minus = sum(1 for s in summaries if s[14] < 0)
+
+            selisih_str = f"+{format_rupiah(total_selisih)}" if total_selisih >= 0 else format_rupiah(total_selisih)
+            selisih_icon = "📈" if total_selisih >= 0 else "📉"
 
             message = f"""
 📆 *Rekap Bulanan*
-{start_date.strftime('%B %Y')}
+{now.strftime('%B %Y')}
 
+━━━━━━━━━━━━━━━━━━━━
 📈 Total Omzet: {format_rupiah(total_omzet)}
-💳 Total TF: {format_rupiah(total_tf)}
-📤 Total Keluar: {format_rupiah(total_keluar)}
-📊 Hari Tercatat: {len(summaries)} hari
+🖥️ Total POS: {format_rupiah(total_pos)}
+{selisih_icon} Total Selisih: {selisih_str}
 
-_Gunakan /bulanan untuk detail_
+📈 Hari Plus: {days_plus} | 📉 Minus: {days_minus}
+📊 Tercatat: {len(summaries)} hari
+━━━━━━━━━━━━━━━━━━━━
+
+_Ketuk /bulanan untuk detail lengkap_
 """
+            keyboard = [[InlineKeyboardButton("🔙 Kembali", callback_data="menu_rekap")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
     # ===== NEW COMMAND HANDLERS (v2) =====
@@ -1171,16 +1499,19 @@ _Gunakan /bulanan untuk detail_
 
 *3️⃣ Laporan & Koreksi*
 • `/status` - Lihat rekap hari ini
-• `/mingguan` - Lihat rekap 7 hari terakhir
-• `/bulanan` - Lihat rekap bulan ini
+• `/mingguan` - Rekap 7 hari + total selisih
+• `/bulanan` - Rekap bulan ini + total selisih
 • `/lihat` - Daftar transaksi hari ini
-• `/edit` - Hapus/ubah transaksi
-• `/reset` - Hapus semua transaksi hari ini (bisa pilih tanggal)
+• `/edit` - Hapus/ubah transaksi hari ini
+• `/editrekap TANGGAL` - Edit rekap tanggal lalu
+• `/riwayat [TANGGAL]` - Lihat riwayat perubahan
+• `/reset` - Hapus transaksi (bisa pilih tanggal)
 
 *4️⃣ Fitur Otomatis*
 • 📸 Kirim foto bukti transfer untuk OCR
 • ⏰ Rekap otomatis jam 23:00 (Draft) & 02:00 (Final)
-• 💾 Data tersimpan aman meski di-reset (versi revisi)
+• 💾 Data tersimpan aman + riwayat perubahan
+• 📊 Total selisih di rekap mingguan/bulanan
 
 _Gunakan tombol di bawah untuk navigasi cepat_
 """
@@ -1215,6 +1546,13 @@ _Gunakan tombol di bawah untuk navigasi cepat_
             total_tf = sum(s[6] for s in summaries)      # total_tf
             total_keluar = sum(s[8] for s in summaries)  # total_pengeluaran
             total_pos = sum(s[10] for s in summaries)    # pos_total
+            # Total selisih (index 14) - minus dikurangi, plus ditambah
+            total_selisih = sum(s[14] for s in summaries)  # selisih
+            days_plus = sum(1 for s in summaries if s[14] > 0)
+            days_minus = sum(1 for s in summaries if s[14] < 0)
+
+            # Format selisih dengan tanda
+            selisih_str = f"+{format_rupiah(total_selisih)}" if total_selisih >= 0 else format_rupiah(total_selisih)
 
             message = f"""
 📅 *REKAP MINGGUAN*
@@ -1230,6 +1568,13 @@ _Gunakan tombol di bawah untuk navigasi cepat_
 📊 Rata-rata/hari: {format_rupiah(total_omzet // len(summaries) if summaries else 0)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
+📉 TOTAL SELISIH
+━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Total: {selisih_str}
+📈 Hari Plus: {days_plus} hari
+📉 Hari Minus: {days_minus} hari
+
+━━━━━━━━━━━━━━━━━━━━━━━━
 📋 DETAIL PER HARI
 ━━━━━━━━━━━━━━━━━━━━━━━━
 """
@@ -1237,13 +1582,15 @@ _Gunakan tombol di bawah untuk navigasi cepat_
                 date = s[1]
                 state = s[3]
                 omzet = s[13]
+                selisih = s[14]
                 status_icon = s[17]
                 version = s[2]
 
                 state_label = {'DRAFT': '📝', 'FINAL': '✅', 'REVISED': '🔄'}.get(state, '❓')
                 v_label = f"v{version}" if version > 1 else ""
+                selisih_sign = f"+{format_rupiah(selisih)}" if selisih >= 0 else format_rupiah(selisih)
 
-                message += f"{date}: {format_rupiah(omzet)} {status_icon} {state_label}{v_label}\n"
+                message += f"{date}: {format_rupiah(omzet)} | {selisih_sign} {status_icon} {state_label}{v_label}\n"
 
             message += f"\n📊 Data: {len(summaries)} hari tercatat"
 
@@ -1280,6 +1627,13 @@ _Gunakan tombol di bawah untuk navigasi cepat_
             total_tf = sum(s[6] for s in summaries)
             total_keluar = sum(s[8] for s in summaries)
             total_pos = sum(s[10] for s in summaries)
+            # Total selisih (index 14) - minus dikurangi, plus ditambah
+            total_selisih = sum(s[14] for s in summaries)  # selisih
+            days_plus = sum(1 for s in summaries if s[14] > 0)
+            days_minus = sum(1 for s in summaries if s[14] < 0)
+
+            # Format selisih dengan tanda
+            selisih_str = f"+{format_rupiah(total_selisih)}" if total_selisih >= 0 else format_rupiah(total_selisih)
 
             message = f"""
 📆 *REKAP BULANAN*
@@ -1293,6 +1647,13 @@ _Gunakan tombol di bawah untuk navigasi cepat_
 💳 Total Transfer: {format_rupiah(total_tf)}
 📤 Total Pengeluaran: {format_rupiah(total_keluar)}
 📊 Rata-rata/hari: {format_rupiah(total_omzet // len(summaries) if summaries else 0)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+📉 TOTAL SELISIH
+━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Total: {selisih_str}
+📈 Hari Plus: {days_plus} hari
+📉 Hari Minus: {days_minus} hari
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 📋 DATA
@@ -1311,8 +1672,9 @@ _Gunakan tombol di bawah untuk navigasi cepat_
         """Handler untuk text input dari button flow (state machine)"""
         # Check if there's a pending input from button flow
         pending_input = context.user_data.get('pending_input')
+        pending_addtx = context.user_data.get('pending_addtx')
 
-        if not pending_input:
+        if not pending_input and not pending_addtx:
             return  # No pending input, let it pass to other handlers
 
         try:
@@ -1323,46 +1685,90 @@ _Gunakan tombol di bawah untuk navigasi cepat_
                 await update.message.reply_text("❌ Jumlah harus > 0")
                 return
 
-            tanggal = datetime.now().strftime('%Y-%m-%d')
-            waktu = datetime.now().strftime('%H:%M:%S')
+            # Handle adding transaction to past date
+            if pending_addtx:
+                date_str = pending_addtx['date']
+                tipe = pending_addtx['tipe']
+                username = self._get_username(update.effective_user)
+                waktu = datetime.now().strftime('%H:%M:%S')
 
-            # Map input type to transaction type
-            type_map = {
-                'cash': 'cash',
-                'tf': 'tf',
-                'keluar': 'keluar',
-                'modal': 'modal',
-                'pos': 'pos'
-            }
-            tipe = type_map.get(pending_input, pending_input)
+                tx_id = self.storage.add_transaction(
+                    tanggal=date_str,
+                    waktu=waktu,
+                    tipe=tipe,
+                    jumlah=amount,
+                    sumber='button_editrekap',
+                    keterangan=f'Ditambahkan via button oleh {username}',
+                    chat_id=update.effective_chat.id,
+                    user_id=update.effective_user.id,
+                    username=username,
+                    message_id=update.message.message_id
+                )
 
-            # Save transaction
-            self.storage.add_transaction(
-                tanggal=tanggal,
-                waktu=waktu,
-                tipe=tipe,
-                jumlah=amount,
-                sumber='button',
-                keterangan='',
-                chat_id=update.effective_chat.id,
-                user_id=update.effective_user.id,
-                message_id=update.message.message_id
-            )
+                # Auto-generate REVISED summary
+                summary_data = self.logic.calculate_daily_summary(date_str)
+                self.storage.save_daily_summary(
+                    date=date_str,
+                    state='REVISED',
+                    summary_data=summary_data,
+                    notes=f'Revisi: {tipe} {amount} ditambahkan via button oleh {username}'
+                )
 
-            # Clear pending state
-            context.user_data.pop('pending_input', None)
+                context.user_data.pop('pending_addtx', None)
 
-            type_names = {
-                'cash': 'Cash akhir',
-                'tf': 'Transfer/QRIS',
-                'keluar': 'Pengeluaran',
-                'modal': 'Modal awal',
-                'pos': 'Total POS'
-            }
-            name = type_names.get(tipe, 'Transaksi')
+                tipe_names = {'modal': 'Modal', 'cash': 'Cash', 'tf': 'Transfer', 'keluar': 'Pengeluaran', 'pos': 'Total POS'}
+                await update.message.reply_text(
+                    f"✅ {tipe_names.get(tipe, tipe)} {format_rupiah(amount)} ditambahkan\n"
+                    f"📅 Tanggal: {date_str}\n"
+                    f"🔑 ID: {tx_id}\n"
+                    f"🔄 Rekap direvisi otomatis"
+                )
+                logger.info(f"AddTx via button: {tipe}={amount}, date={date_str} by {username}")
+                return
 
-            await update.message.reply_text(f"✅ {name} {format_rupiah(amount)} tersimpan")
-            logger.info(f"{tipe} via button: {amount}")
+            # Handle regular pending input (for today)
+            if pending_input:
+                tanggal = datetime.now().strftime('%Y-%m-%d')
+                waktu = datetime.now().strftime('%H:%M:%S')
+
+                # Map input type to transaction type
+                type_map = {
+                    'cash': 'cash',
+                    'tf': 'tf',
+                    'keluar': 'keluar',
+                    'modal': 'modal',
+                    'pos': 'pos'
+                }
+                tipe = type_map.get(pending_input, pending_input)
+
+                # Save transaction
+                self.storage.add_transaction(
+                    tanggal=tanggal,
+                    waktu=waktu,
+                    tipe=tipe,
+                    jumlah=amount,
+                    sumber='button',
+                    keterangan='',
+                    chat_id=update.effective_chat.id,
+                    user_id=update.effective_user.id,
+                    username=self._get_username(update.effective_user),
+                    message_id=update.message.message_id
+                )
+
+                # Clear pending state
+                context.user_data.pop('pending_input', None)
+
+                type_names = {
+                    'cash': 'Cash akhir',
+                    'tf': 'Transfer/QRIS',
+                    'keluar': 'Pengeluaran',
+                    'modal': 'Modal awal',
+                    'pos': 'Total POS'
+                }
+                name = type_names.get(tipe, 'Transaksi')
+
+                await update.message.reply_text(f"✅ {name} {format_rupiah(amount)} tersimpan")
+                logger.info(f"{tipe} via button: {amount}")
 
         except ValueError as e:
             await update.message.reply_text(f"❌ Format tidak valid: {str(e)}")
@@ -1370,6 +1776,324 @@ _Gunakan tombol di bawah untuk navigasi cepat_
             logger.error(f"Error in text_input_handler: {e}")
             await update.message.reply_text("❌ Terjadi kesalahan")
             context.user_data.pop('pending_input', None)
+
+    async def editrekap_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler untuk /editrekap [YYYY-MM-DD] - edit transaksi tanggal lalu"""
+        try:
+            import re as regex
+
+            # Parse tanggal dari argumen atau tampilkan help
+            if not context.args:
+                await update.message.reply_text(
+                    "📝 *EDIT REKAP*\n\n"
+                    "Gunakan format:\n"
+                    "• `/editrekap TANGGAL` - lihat transaksi\n"
+                    "• `/editrekap TANGGAL tambah TIPE JUMLAH` - tambah baru\n"
+                    "• `/editrekap TANGGAL hapus ID` - hapus transaksi\n"
+                    "• `/editrekap TANGGAL ID JUMLAH` - ubah jumlah\n\n"
+                    "*Contoh:*\n"
+                    "• `/editrekap 2025-12-20`\n"
+                    "• `/editrekap 2025-12-20 tambah pos 1.5jt`\n"
+                    "• `/editrekap 2025-12-20 tambah tf 300k`\n"
+                    "• `/editrekap 2025-12-20 hapus 123`\n"
+                    "• `/editrekap 2025-12-20 123 150k`\n\n"
+                    "_TIPE: modal, cash, tf, keluar, pos_",
+                    parse_mode='Markdown'
+                )
+                return
+
+            date_str = context.args[0]
+
+            # Validasi format tanggal
+            if not regex.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+                await update.message.reply_text(
+                    "❌ Format tanggal salah.\n\n"
+                    "Gunakan format: `/editrekap YYYY-MM-DD`\n"
+                    "Contoh: `/editrekap 2025-12-20`",
+                    parse_mode='Markdown'
+                )
+                return
+
+            # Jika hanya tanggal, tampilkan transaksi untuk tanggal tersebut
+            if len(context.args) == 1:
+                transactions = self.storage.get_transactions_by_date(date_str)
+
+                message = f"📝 *EDIT REKAP*\n📅 {date_str}\n\n"
+
+                if not transactions:
+                    message += "📭 _Belum ada transaksi_\n\n"
+                else:
+                    tipe_emoji = {'modal': '💰', 'cash': '💵', 'tf': '💳', 'keluar': '📤', 'pos': '🖥️'}
+                    tipe_label = {'modal': 'MODAL', 'cash': 'CASH', 'tf': 'TF', 'keluar': 'KELUAR', 'pos': 'POS'}
+
+                    for i, tx in enumerate(transactions, 1):
+                        tx_id = tx[0]
+                        waktu = tx[2][:5]
+                        tipe = tx[3]
+                        jumlah = tx[4]
+                        ket = tx[6] if tx[6] else ''
+
+                        emoji = tipe_emoji.get(tipe, '📝')
+                        label = tipe_label.get(tipe, tipe.upper())
+
+                        line = f"{i}. [{waktu}] {emoji} {label}: {format_rupiah(jumlah)}"
+                        if ket:
+                            line += f"\n   💬 {ket}"
+                        line += f"\n   🔑 ID: `{tx_id}`\n"
+
+                        message += line
+
+                message += f"\n📝 *Aksi:*\n"
+                message += f"➕ Tambah: `/editrekap {date_str} tambah pos 1.5jt`\n"
+                message += f"🗑️ Hapus: `/editrekap {date_str} hapus ID`\n"
+                message += f"✏️ Ubah: `/editrekap {date_str} ID JUMLAH`\n"
+
+                await update.message.reply_text(message, parse_mode='Markdown')
+                return
+
+            # Action: tambah transaksi baru
+            if context.args[1].lower() == 'tambah':
+                if len(context.args) < 4:
+                    await update.message.reply_text(
+                        "❌ Format: `/editrekap TANGGAL tambah TIPE JUMLAH`\n\n"
+                        "TIPE: `modal`, `cash`, `tf`, `keluar`, `pos`\n\n"
+                        "Contoh:\n"
+                        "• `/editrekap 2025-12-20 tambah pos 1.5jt`\n"
+                        "• `/editrekap 2025-12-20 tambah tf 300k`",
+                        parse_mode='Markdown'
+                    )
+                    return
+
+                tipe = context.args[2].lower()
+                valid_types = ['modal', 'cash', 'tf', 'keluar', 'pos']
+                if tipe not in valid_types:
+                    await update.message.reply_text(
+                        f"❌ Tipe `{tipe}` tidak valid.\n\n"
+                        f"Gunakan: `modal`, `cash`, `tf`, `keluar`, `pos`",
+                        parse_mode='Markdown'
+                    )
+                    return
+
+                amount_str = ' '.join(context.args[3:])
+                try:
+                    amount = parse_amount(amount_str)
+                except ValueError as e:
+                    await update.message.reply_text(f"❌ Format jumlah tidak valid: {str(e)}")
+                    return
+
+                if amount < 0:
+                    await update.message.reply_text("❌ Jumlah tidak boleh negatif")
+                    return
+
+                username = self._get_username(update.effective_user)
+                waktu = datetime.now().strftime('%H:%M:%S')
+
+                # Tambah transaksi
+                tx_id = self.storage.add_transaction(
+                    tanggal=date_str,
+                    waktu=waktu,
+                    tipe=tipe,
+                    jumlah=amount,
+                    sumber='editrekap',
+                    keterangan=f'Ditambahkan via editrekap oleh {username}',
+                    chat_id=update.effective_chat.id,
+                    user_id=update.effective_user.id,
+                    username=username,
+                    message_id=update.message.message_id
+                )
+
+                # Auto-generate REVISED summary
+                summary_data = self.logic.calculate_daily_summary(date_str)
+                self.storage.save_daily_summary(
+                    date=date_str,
+                    state='REVISED',
+                    summary_data=summary_data,
+                    notes=f'Revisi: {tipe} {amount} ditambahkan oleh {username}'
+                )
+
+                tipe_names = {'modal': 'Modal', 'cash': 'Cash', 'tf': 'Transfer', 'keluar': 'Pengeluaran', 'pos': 'Total POS'}
+                await update.message.reply_text(
+                    f"✅ {tipe_names.get(tipe, tipe)} {format_rupiah(amount)} ditambahkan\n"
+                    f"📅 Tanggal: {date_str}\n"
+                    f"🔑 ID: {tx_id}\n"
+                    f"🔄 Rekap direvisi otomatis"
+                )
+                logger.info(f"EditRekap ADD: {tipe}={amount}, date={date_str} by {username}")
+                return
+
+            # Action: hapus
+            if context.args[1].lower() == 'hapus':
+                if len(context.args) < 3:
+                    await update.message.reply_text("❌ Format: `/editrekap TANGGAL hapus ID`", parse_mode='Markdown')
+                    return
+
+                try:
+                    tx_id = int(context.args[2])
+                except ValueError:
+                    await update.message.reply_text("❌ ID harus berupa angka")
+                    return
+
+                # Verifikasi transaksi ada dan sesuai tanggal
+                tx = self.storage.get_transaction_by_id(tx_id)
+                if not tx:
+                    await update.message.reply_text(f"❌ Transaksi ID {tx_id} tidak ditemukan")
+                    return
+                if tx[1] != date_str:
+                    await update.message.reply_text(f"❌ Transaksi ID {tx_id} bukan untuk tanggal {date_str}")
+                    return
+
+                username = self._get_username(update.effective_user)
+                self.storage.delete_transaction(tx_id, username=username)
+
+                # Auto-generate REVISED summary
+                summary_data = self.logic.calculate_daily_summary(date_str)
+                self.storage.save_daily_summary(
+                    date=date_str,
+                    state='REVISED',
+                    summary_data=summary_data,
+                    notes=f'Revisi: transaksi ID {tx_id} dihapus oleh {username}'
+                )
+
+                await update.message.reply_text(
+                    f"✅ Transaksi ID {tx_id} berhasil dihapus\n"
+                    f"🔄 Rekap {date_str} direvisi otomatis"
+                )
+                logger.info(f"EditRekap DELETE: ID={tx_id}, date={date_str} by {username}")
+                return
+
+            # Action: ubah jumlah
+            try:
+                tx_id = int(context.args[1])
+            except ValueError:
+                await update.message.reply_text("❌ ID harus berupa angka\nFormat: `/editrekap TANGGAL ID JUMLAH`", parse_mode='Markdown')
+                return
+
+            if len(context.args) < 3:
+                await update.message.reply_text("❌ Format: `/editrekap TANGGAL ID JUMLAH`", parse_mode='Markdown')
+                return
+
+            # Verifikasi transaksi ada dan sesuai tanggal
+            tx = self.storage.get_transaction_by_id(tx_id)
+            if not tx:
+                await update.message.reply_text(f"❌ Transaksi ID {tx_id} tidak ditemukan")
+                return
+            if tx[1] != date_str:
+                await update.message.reply_text(f"❌ Transaksi ID {tx_id} bukan untuk tanggal {date_str}")
+                return
+
+            amount_str = ' '.join(context.args[2:])
+            try:
+                new_amount = parse_amount(amount_str)
+            except ValueError as e:
+                await update.message.reply_text(f"❌ Format jumlah tidak valid: {str(e)}")
+                return
+
+            if new_amount < 0:
+                await update.message.reply_text("❌ Jumlah tidak boleh negatif")
+                return
+
+            username = self._get_username(update.effective_user)
+            old_amount = tx[4]
+            self.storage.update_transaction(tx_id, username=username, jumlah=new_amount)
+
+            # Auto-generate REVISED summary
+            summary_data = self.logic.calculate_daily_summary(date_str)
+            self.storage.save_daily_summary(
+                date=date_str,
+                state='REVISED',
+                summary_data=summary_data,
+                notes=f'Revisi: ID {tx_id} diubah {old_amount} → {new_amount} oleh {username}'
+            )
+
+            await update.message.reply_text(
+                f"✅ Transaksi ID {tx_id} diubah\n"
+                f"💵 {format_rupiah(old_amount)} → {format_rupiah(new_amount)}\n"
+                f"🔄 Rekap {date_str} direvisi otomatis"
+            )
+            logger.info(f"EditRekap UPDATE: ID={tx_id}, {old_amount} → {new_amount} by {username}")
+
+        except Exception as e:
+            logger.error(f"Error in editrekap_command: {e}")
+            await update.message.reply_text("❌ Terjadi kesalahan")
+
+    async def riwayat_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler untuk /riwayat [YYYY-MM-DD] - lihat riwayat perubahan"""
+        try:
+            import re as regex
+
+            # Default ke hari ini jika tidak ada argumen
+            if context.args:
+                date_str = context.args[0]
+                # Validasi format tanggal
+                if not regex.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+                    await update.message.reply_text(
+                        "❌ Format tanggal salah.\n\n"
+                        "Gunakan format: `/riwayat YYYY-MM-DD`\n"
+                        "Contoh: `/riwayat 2025-12-20`",
+                        parse_mode='Markdown'
+                    )
+                    return
+            else:
+                date_str = datetime.now().strftime('%Y-%m-%d')
+
+            # Ambil audit log untuk tanggal tersebut
+            logs = self.storage.get_audit_log_by_date(date_str)
+
+            if not logs:
+                await update.message.reply_text(
+                    f"📭 *RIWAYAT PERUBAHAN*\n\n"
+                    f"📅 {date_str}\n\n"
+                    f"Belum ada log perubahan untuk tanggal ini.",
+                    parse_mode='Markdown'
+                )
+                return
+
+            message = f"📜 *RIWAYAT PERUBAHAN*\n📅 {date_str}\n\n"
+
+            action_emoji = {'ADD': '➕', 'EDIT': '✏️', 'DELETE': '🗑️'}
+            action_label = {'ADD': 'Tambah', 'EDIT': 'Edit', 'DELETE': 'Hapus'}
+
+            for log in logs[:20]:  # Limit 20 entries
+                log_id, timestamp, action, entity_type, entity_id, entity_date, username, field, old_val, new_val, notes = log
+
+                # Parse timestamp
+                try:
+                    ts = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    time_str = ts.strftime('%H:%M')
+                except:
+                    time_str = timestamp[:5] if timestamp else '??:??'
+
+                emoji = action_emoji.get(action, '📝')
+                label = action_label.get(action, action)
+
+                line = f"{emoji} [{time_str}] *{label}* oleh {username}\n"
+
+                if action == 'ADD':
+                    line += f"   📋 {field}: {format_rupiah(float(new_val)) if new_val else '-'}\n"
+                elif action == 'EDIT':
+                    if old_val and new_val:
+                        try:
+                            line += f"   📋 {field}: {format_rupiah(float(old_val))} → {format_rupiah(float(new_val))}\n"
+                        except:
+                            line += f"   📋 {field}: {old_val} → {new_val}\n"
+                elif action == 'DELETE':
+                    line += f"   📋 {field}: {format_rupiah(float(old_val)) if old_val else '-'} dihapus\n"
+
+                if notes:
+                    line += f"   💬 {notes}\n"
+
+                message += line
+
+            if len(logs) > 20:
+                message += f"\n_...dan {len(logs) - 20} log lainnya_\n"
+
+            message += f"\n📊 Total: {len(logs)} perubahan"
+
+            await update.message.reply_text(message, parse_mode='Markdown')
+
+        except Exception as e:
+            logger.error(f"Error in riwayat_command: {e}")
+            await update.message.reply_text("❌ Terjadi kesalahan")
 
     def run(self):
         """Jalankan bot"""
@@ -1390,6 +2114,8 @@ _Gunakan tombol di bawah untuk navigasi cepat_
         application.add_handler(CommandHandler("reset", self.reset_command))
         application.add_handler(CommandHandler("mingguan", self.mingguan_command))
         application.add_handler(CommandHandler("bulanan", self.bulanan_command))
+        application.add_handler(CommandHandler("editrekap", self.editrekap_command))
+        application.add_handler(CommandHandler("riwayat", self.riwayat_command))
 
         application.add_handler(MessageHandler(filters.PHOTO, self.photo_handler))
         # Text handler for button flow (must be after command handlers)
